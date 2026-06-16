@@ -1,0 +1,42 @@
+# Website Compare (standalone) — just two services: a stateless backend + the Vite frontend.
+# No db / redis / minio: compare keeps no state. No login. Whole thing runs in Docker; watch
+# logs in Docker Desktop or `docker compose logs -f backend` (or frontend).
+services:
+  backend:
+    build: ./Backend
+    restart: unless-stopped
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # SSRF guard — reject private/internal targets. Keep true unless this is internal-only.
+      COMPARE_SSRF_BLOCK_PRIVATE: ${COMPARE_SSRF_BLOCK_PRIVATE:-true}
+      COMPARE_URL_ALLOWLIST: ${COMPARE_URL_ALLOWLIST:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Backend:/app          # bind mount → --reload picks up edits
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build: ./Frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000   # proxy /api → backend over the compose network
+      VITE_OPEN: "false"
+      VITE_POLL: "true"                          # poll the bind mount so hot reload fires on Windows
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./Frontend:/app
+      - compare_node_modules:/app/node_modules   # keep node_modules off the host bind mount
+
+volumes:
+  compare_node_modules:

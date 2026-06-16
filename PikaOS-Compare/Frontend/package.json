@@ -1,0 +1,20 @@
+{
+  "name": "pikaos-compare",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Website Compare — standalone UAT vs Production content comparison (extracted from PiKaOs). No login, no nav.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

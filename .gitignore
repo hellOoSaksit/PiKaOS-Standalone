@@ -1,0 +1,12 @@
+# deps / build output
+**/node_modules/
+**/dist/
+**/.vite/
+
+# python
+**/__pycache__/
+*.pyc
+
+# local config / secrets
+.env
+.DS_Store
