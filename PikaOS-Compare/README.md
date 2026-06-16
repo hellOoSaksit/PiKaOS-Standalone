@@ -1,6 +1,6 @@
 # Website Compare — v0.1 (standalone)
 
-A self-contained build of the **Compare** feature lifted out of [PiKaOs](../../). It compares a
+A self-contained build of the **Compare** feature lifted out of [PiKaOs](../../PiKaOs). It compares a
 **UAT** site against **Production** — sitemap URL coverage + an optional deep body/heading/SEO/
 image/link diff — and **nothing else**: no sidebar nav, no other modules, **no login**.
 
@@ -47,4 +47,4 @@ Backend layering is unchanged from PiKaOs: `routers/compare.py` → `services/co
 - Only the Compare screen ships — no nav, dashboards, RBAC, world, etc.
 - Backend deps trimmed to `fastapi · uvicorn · httpx · pydantic · pydantic-settings` (no sqlalchemy/asyncpg/redis/minio/jwt/argon2).
 
-Behaviour reference: the parent repo's [docs/features/compare.md](../../docs/features/compare.md).
+Behaviour reference: the parent repo's [docs/features/compare.md](../../PiKaOs-Docs/docs/features/compare.md).
