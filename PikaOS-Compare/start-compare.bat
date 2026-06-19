@@ -42,8 +42,8 @@ echo       Waiting for the backend API...
 call :waitbackend 60
 echo.
 
-echo [3/3] Opening http://localhost:5173 ...
-start "" "http://localhost:5173"
+echo [3/3] Opening http://localhost:5174 ...
+start "" "http://localhost:5174"
 echo       Logs: docker compose logs -f backend   (or frontend). You can close this window.
 timeout /t 3 >nul
 exit /b 0
@@ -64,7 +64,7 @@ goto :wd_loop
 set /a _bmax=%~1
 set /a _bt=0
 :wb_loop
-curl -fsS -m 2 -o nul http://127.0.0.1:8000/api/health >nul 2>&1
+curl -fsS -m 2 -o nul http://127.0.0.1:8001/api/health >nul 2>&1
 if %errorlevel%==0 exit /b 0
 set /a _bt+=2
 if %_bt% geq %_bmax% exit /b 1

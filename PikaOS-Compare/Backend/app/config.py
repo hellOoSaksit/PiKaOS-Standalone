@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     compare_url_allowlist: str = ""
 
     # --- CORS (frontend dev origin) ---
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5174"   # host frontend port (registry: PiKaOs-docs/docs/architecture/ports.md)
 
     @property
     def cors_list(self) -> list[str]:

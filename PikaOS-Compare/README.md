@@ -12,11 +12,12 @@ image/link diff — and **nothing else**: no sidebar nav, no other modules, **no
 Whole thing runs in Docker (backend + frontend). Either:
 
 - **Windows:** double-click [`start-compare.bat`](start-compare.bat) — brings the stack up and opens the browser.
-- **Any OS:** `docker compose up -d --build`, then open **http://localhost:5173**.
+- **Any OS:** `docker compose up -d --build`, then open **http://localhost:5174**.
 
-> Uses ports **5173** (frontend) and **8000** (backend). If you're on the same machine as the
-> full PiKaOs stack, stop it first (it owns those ports) or change the `ports:` mappings in
-> [`docker-compose.yml`](docker-compose.yml). As a delivered standalone it runs on its own.
+> Uses host ports **5174** (frontend) and **8001** (backend) — chosen so this runs **side-by-side
+> with the main PiKaOs stack** (5173/8000) and every other standalone. See the
+> [port registry](../../PiKaOs-docs/docs/architecture/ports.md) (single source of truth). Change the
+> `ports:` in [`docker-compose.yml`](docker-compose.yml) only if you reassign in the registry too.
 
 Logs: Docker Desktop, or `docker compose logs -f backend` (or `frontend`). Config is optional —
 copy [`.env.example`](.env.example) → `.env` only to override (CORS, SSRF guard, host allowlist).
@@ -47,4 +48,4 @@ Backend layering is unchanged from PiKaOs: `routers/compare.py` → `services/co
 - Only the Compare screen ships — no nav, dashboards, RBAC, world, etc.
 - Backend deps trimmed to `fastapi · uvicorn · httpx · pydantic · pydantic-settings` (no sqlalchemy/asyncpg/redis/minio/jwt/argon2).
 
-Behaviour reference: the parent repo's [docs/features/compare.md](../../PiKaOs-Docs/docs/features/compare.md).
+Behaviour reference: the parent repo's [docs/features/compare.md](../../PiKaOs-docs/docs/features/compare.md).

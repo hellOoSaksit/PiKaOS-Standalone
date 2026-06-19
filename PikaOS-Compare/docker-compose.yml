@@ -1,17 +1,20 @@
 # Website Compare (standalone) — just two services: a stateless backend + the Vite frontend.
 # No db / redis / minio: compare keeps no state. No login. Whole thing runs in Docker; watch
 # logs in Docker Desktop or `docker compose logs -f backend` (or frontend).
+#
+# PORTS — host 5174 (frontend) / 8001 (backend). MUST NOT clash with the main PiKaOs stack
+# (5173/8000 + 5432/6379/9000/9001) or any other standalone. Registry: PiKaOs-docs/docs/architecture/ports.md
 services:
   backend:
     build: ./Backend
     restart: unless-stopped
     environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5174}
       # SSRF guard — reject private/internal targets. Keep true unless this is internal-only.
       COMPARE_SSRF_BLOCK_PRIVATE: ${COMPARE_SSRF_BLOCK_PRIVATE:-true}
       COMPARE_URL_ALLOWLIST: ${COMPARE_URL_ALLOWLIST:-}
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./Backend:/app          # bind mount → --reload picks up edits
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -33,7 +36,7 @@ services:
       VITE_OPEN: "false"
       VITE_POLL: "true"                          # poll the bind mount so hot reload fires on Windows
     ports:
-      - "5173:5173"
+      - "5174:5173"
     volumes:
       - ./Frontend:/app
       - compare_node_modules:/app/node_modules   # keep node_modules off the host bind mount

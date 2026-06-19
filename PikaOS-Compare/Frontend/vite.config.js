@@ -1,12 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// dev proxy → the standalone compare backend. In Docker the frontend reaches it over the
-// compose network as `backend:8000` (VITE_PROXY_TARGET); on the host it defaults to
-// 127.0.0.1:8000 (IPv4 forced — "localhost" can resolve to ::1 on Windows and break the
-// Docker port-forward). Timeout is generous (180s) because a deep batch on a slow, WAF-
-// throttled site can take 1–2 min.
-const PROXY_TARGET = process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000';
+// dev proxy → the standalone compare backend. In Docker the frontend reaches it over the compose
+// network as `backend:8000` (VITE_PROXY_TARGET). Running vite on the host instead, it falls back to
+// 127.0.0.1:8001 — this app's host backend port (registry: PiKaOs-docs/docs/architecture/ports.md; IPv4 forced because "localhost"
+// can resolve to ::1 on Windows and break the Docker port-forward). Timeout is generous (180s)
+// because a deep batch on a slow, WAF-throttled site can take 1–2 min.
+const PROXY_TARGET = process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8001';
 
 export default defineConfig({
   plugins: [react()],
