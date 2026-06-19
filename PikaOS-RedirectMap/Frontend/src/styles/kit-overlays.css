@@ -1,0 +1,175 @@
+/* ============================================================
+   PiKaOs KIT OVERLAYS — shared styles for the imperative in-app
+   popups (confirm/alert/prompt, loading, notifications) so they
+   use the new design language app-wide. Ported from the PiKaOs
+   component-kit reference.
+   ============================================================ */
+
+/* spinner */
+.pk-spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: pk-spin .7s linear infinite; display: inline-block; }
+.pk-spin.dark { border-color: color-mix(in srgb, var(--ink-3) 35%, transparent); border-top-color: var(--ink-3); }
+@keyframes pk-spin { to { transform: rotate(360deg); } }
+
+/* overlay + base modal */
+.pk-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  background: color-mix(in srgb, var(--bg-0) 62%, transparent);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+@media (prefers-reduced-motion: no-preference) { .pk-overlay { animation: pk-fade .16s ease both; } }
+@keyframes pk-fade { from { opacity: 0; } to { opacity: 1; } }
+.pk-modal {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop); width: min(380px, 100%); padding: 24px;
+}
+@media (prefers-reduced-motion: no-preference) { .pk-modal { animation: pk-pop .35s cubic-bezier(.34,1.9,.6,1) both; } }
+@keyframes pk-pop { from { transform: scale(.9) translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pk-modal .pk-foot { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+.pk-modal .pk-foot .btn { min-width: 104px; }
+
+/* confirm / alert / prompt (status style — centered icon pop) */
+.pk-modal.status { width: min(372px, 100%); text-align: center; }
+.status-ic {
+  width: 62px; height: 62px; border-radius: 50%; margin: 2px auto 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700; line-height: 1;
+}
+.status-ic.ok   { background: color-mix(in srgb, var(--emerald) 14%, transparent); color: var(--emerald); }
+.status-ic.err  { background: color-mix(in srgb, var(--crimson) 14%, transparent); color: var(--crimson); }
+.status-ic.warn { background: color-mix(in srgb, var(--amber, #d98a0c) 16%, transparent); color: var(--amber, #d98a0c); }
+.status-ic.info { background: color-mix(in srgb, var(--sapphire) 14%, transparent); color: var(--sapphire); }
+.status-ic.ask  { background: color-mix(in srgb, var(--gold) 14%, transparent); color: var(--gold-bright); }
+.status-ic.trash{ background: color-mix(in srgb, var(--crimson) 13%, transparent); color: var(--crimson); }
+@media (prefers-reduced-motion: no-preference) { .pk-modal.status .status-ic { animation: status-pop .55s cubic-bezier(.34,1.9,.6,1) both; } }
+@keyframes status-pop { from { opacity: 0; transform: scale(.3); } 60% { transform: scale(1.08); } to { opacity: 1; transform: scale(1); } }
+.pk-modal.status h3 { font-size: 18px; font-weight: 700; color: var(--ink); margin: 0 0 6px; }
+.pk-modal.status p { font-size: 13px; color: var(--ink-3); line-height: 1.6; margin: 0 0 4px; text-wrap: pretty; }
+.pk-modal .pk-input {
+  width: 100%; margin-top: 14px; font-family: var(--font-body); font-size: 14px; color: var(--ink);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 11px 12px; outline: none; text-align: left;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.pk-input:focus { border-color: var(--gold); background: var(--bg-2); box-shadow: 0 0 0 3px var(--gold-glow); }
+.pk-cd { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); }
+.pk-cd-num { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; background: var(--crimson); }
+.pk-warn { margin-top: 12px; font-size: 12px; font-weight: 500; color: var(--crimson); background: color-mix(in srgb, var(--crimson) 9%, transparent); border: 1px solid color-mix(in srgb, var(--crimson) 30%, transparent); border-radius: var(--radius-sm); padding: 8px 10px; text-wrap: pretty; }
+/* countdown badge inside the confirm button */
+.btn-cd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; margin-left: 8px; padding: 0 5px;
+  border-radius: 999px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  background: rgba(255,255,255,.28); color: #fff;
+}
+.btn.is-counting { opacity: 1; }
+.btn.btn-danger.is-counting, .btn.btn-gold.is-counting { filter: saturate(.85) brightness(.97); }
+
+/* loading — pixel walker + indeterminate bar */
+.pk-modal.load { width: min(380px, 100%); text-align: center; }
+.load-title { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+.load-frame {
+  position: relative; height: 150px;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; display: flex; align-items: flex-end; justify-content: center;
+}
+.load-frame::after { content: ""; position: absolute; bottom: 17px; left: 50%; transform: translateX(-50%); width: 70px; height: 13px; border-radius: 50%; background: rgba(0,0,0,.18); filter: blur(3px); }
+.walker { position: relative; z-index: 2; margin-bottom: 15px; width: 56px; height: 126px; background: url(/assets/ceo-walk.png) 0 0 / 2240px 126px no-repeat; image-rendering: pixelated; }
+@media (prefers-reduced-motion: no-preference) { .walker.walking { animation: ceo-walk 1.15s steps(40) infinite; } }
+@keyframes ceo-walk { from { background-position-x: 0; } to { background-position-x: -2240px; } }
+.load-track { height: 8px; border-radius: 999px; background: var(--bg-4); overflow: hidden; margin-top: 16px; position: relative; }
+.load-indet { position: absolute; top: 0; left: 0; height: 100%; width: 38%; border-radius: 999px; background: linear-gradient(90deg, var(--gold), var(--gold-bright)); animation: load-indet 1.15s ease-in-out infinite; }
+@keyframes load-indet { 0% { left: -40%; } 100% { left: 100%; } }
+.load-meta { display: flex; align-items: center; justify-content: center; margin-top: 12px; }
+.load-label { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
+
+/* notifications panel (topbar Todo bell) */
+.notif-pop {
+  position: fixed; z-index: 410; width: 360px; max-width: calc(100vw - 28px);
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop); overflow: hidden;
+}
+@media (prefers-reduced-motion: no-preference) { .notif-pop { animation: pk-pop .3s cubic-bezier(.34,1.9,.6,1) both; transform-origin: top right; } }
+.notif-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; }
+.notif-pop-head h4 { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0; }
+.notif-head-acts { display: flex; align-items: center; gap: 6px; }
+.notif-clear { border: none; background: none; cursor: pointer; font-family: var(--font-body); font-size: 11.5px; font-weight: 600; color: var(--ink-3); padding: 5px 9px; border-radius: 999px; transition: background .12s, color .12s, transform .2s var(--spring); }
+.notif-clear:hover { background: var(--bg-3); color: var(--crimson); }
+.notif-clear:active { transform: scale(.92); transition-duration: .05s; }
+.notif-toprow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.notif-time { font-size: 10px; color: var(--ink-4); flex: none; }
+.notif-av.sys { background: color-mix(in srgb, var(--sapphire) 13%, transparent); }
+.notif-dot { position: absolute; top: 14px; right: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+.notif-row { position: relative; }
+.notif-row.unread .notif-from { color: var(--ink); }
+.notif-q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.notif-pop-head .n-count { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--gold-bright); background: color-mix(in srgb, var(--gold) 12%, transparent); border-radius: 999px; padding: 2px 9px; }
+.notif-pop-close { width: 26px; height: 26px; border: none; background: none; border-radius: 50%; cursor: pointer; color: var(--ink-3); font-size: 13px; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s, transform .2s var(--spring); }
+.notif-pop-close:hover { background: var(--bg-3); color: var(--ink); } .notif-pop-close:active { transform: scale(.84); transition-duration: .05s; }
+.notif-pop-list { max-height: 380px; overflow-y: auto; padding: 6px; border-top: 1px solid var(--line-soft); }
+/* 3-tab switcher (New / History / Starred) */
+.notif-tabs { display: flex; gap: 4px; padding: 0 12px 10px; }
+.notif-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 6px;
+  border: 1px solid var(--line); background: var(--bg-3); color: var(--ink-3); border-radius: 9px; font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: background .14s, color .14s, border-color .14s; }
+.notif-tab:hover { color: var(--ink-2); background: var(--bg-4); }
+.notif-tab.on { background: color-mix(in srgb, var(--gold) 13%, transparent); color: var(--gold-bright); border-color: color-mix(in srgb, var(--gold) 42%, transparent); }
+.notif-tab-n { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--bg-1); color: var(--ink-3);
+  font-size: 10px; font-weight: 700; display: inline-grid; place-items: center; }
+.notif-tab.on .notif-tab-n { background: var(--gold-grad); color: #fff; }
+.notif-star { border: none; background: none; cursor: pointer; font-size: 14px; color: var(--ink-4); padding: 0 2px; line-height: 1; transition: color .14s, transform .15s var(--spring); }
+.notif-star:hover { transform: scale(1.2); color: var(--gold-bright); }
+.notif-star.on { color: var(--gold-bright); }
+.notif-row.done { opacity: .72; }
+.notif-row.done .notif-q { color: var(--ink-3); }
+.notif-row { display: flex; gap: 11px; padding: 11px 12px; border-radius: var(--radius); position: relative; transition: background .15s; }
+.notif-row:hover { background: var(--bg-3); }
+.notif-row.unread { background: color-mix(in srgb, var(--gold) 6%, transparent); }
+.notif-row.unread:hover { background: color-mix(in srgb, var(--gold) 11%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .notif-pop.open .notif-row { animation: notif-row-in .34s cubic-bezier(.34,1.9,.6,1) both; } .notif-pop.open .notif-row:nth-child(2){animation-delay:.04s;} .notif-pop.open .notif-row:nth-child(3){animation-delay:.08s;} .notif-pop.open .notif-row:nth-child(4){animation-delay:.12s;} }
+@keyframes notif-row-in { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: none; } }
+.notif-av { width: 38px; height: 38px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 17px; background: color-mix(in srgb, var(--gold) 13%, transparent); }
+.notif-bd { flex: 1; min-width: 0; }
+.notif-from { font-size: 12px; font-weight: 700; color: var(--ink); }
+.notif-q { font-size: 13px; line-height: 1.5; color: var(--ink-2); margin-top: 2px; text-wrap: pretty; }
+.notif-row-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.notif-room { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4); }
+.notif-row-acts { display: flex; gap: 7px; }
+.notif-pop-empty { text-align: center; color: var(--ink-4); font-size: 13px; padding: 30px 16px; }
+.notif-scrim { position: fixed; inset: 0; z-index: 405; }
+
+/* ============================================================
+   Kit mini-switch — restyles every raw checkbox in settings rows
+   (.sm-set-toggle, .sm-aicheck, .ck-inline) without markup changes
+   ============================================================ */
+.sm-set-toggle input[type="checkbox"],
+.sm-aicheck input[type="checkbox"],
+.ck-inline input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none;
+  width: 36px; height: 21px; border-radius: 999px; position: relative; cursor: pointer;
+  background: var(--bg-4); border: 1px solid var(--line);
+  transition: background .2s ease, border-color .2s ease;
+  vertical-align: middle;
+}
+.sm-set-toggle input[type="checkbox"]::after,
+.sm-aicheck input[type="checkbox"]::after,
+.ck-inline input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: var(--bg-2); box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: left .25s var(--spring, cubic-bezier(.34,1.9,.6,1)), width .15s;
+}
+.sm-set-toggle input[type="checkbox"]:active::after,
+.sm-aicheck input[type="checkbox"]:active::after,
+.ck-inline input[type="checkbox"]:active::after { width: 19px; }
+.sm-set-toggle input[type="checkbox"]:checked,
+.sm-aicheck input[type="checkbox"]:checked,
+.ck-inline input[type="checkbox"]:checked { background: var(--gold); border-color: var(--gold-deep); }
+.sm-set-toggle input[type="checkbox"]:checked::after,
+.sm-aicheck input[type="checkbox"]:checked::after,
+.ck-inline input[type="checkbox"]:checked::after { left: calc(100% - 17px); background: #fff; }
+.sm-set-toggle input[type="checkbox"]:checked:active::after,
+.sm-aicheck input[type="checkbox"]:checked:active::after,
+.ck-inline input[type="checkbox"]:checked:active::after { left: calc(100% - 21px); }
+.sm-set-toggle input[type="checkbox"]:focus-visible,
+.sm-aicheck input[type="checkbox"]:focus-visible,
+.ck-inline input[type="checkbox"]:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--gold-glow); }

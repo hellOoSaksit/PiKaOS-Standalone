@@ -1,0 +1,9 @@
+/* PiKaOs styles — import order matters (tokens/base first) */
+@import '../components/ui/ui-kit.css'; /* PiKaOs component kit (given set) — first so app rules win on shared names */
+@import './styles.css';      /* tokens (pro/pro-dark), reset, typography, 3D letters, buttons, primitives */
+@import './components.css';   /* page/cards/login/builder + PiKaOs motion layer */
+@import './world.css';        /* world/rooms, modals, badges, chat, sitemap */
+@import './kit-overlays.css';  /* new-look confirm/loading/notification popups */
+@import './dashboard.css';
+@import './rbac.css';
+@import './fx.css';

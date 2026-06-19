@@ -1,0 +1,196 @@
+/* ============================================================
+   FX + RESPONSIVE — micro-interactions, motion polish, and a
+   responsive shell (off-canvas sidebar on small screens).
+   All motion is gated behind prefers-reduced-motion.
+   ============================================================ */
+
+/* ---------- micro-interactions ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .nav-item, .room-card, .myagent-card, .agent-card, .codex-row,
+  .wtab, .bp-item, .theme-toggle button, .vb-exit, .adoc-btn, .done-toggle,
+  .tb-todo, .profile-card, .feature-tag, .quest-card, .room-card-new,
+  .bp-cat, .hermes-fab, .notify-go, .qbadge, .me-chip {
+    transition: transform .16s cubic-bezier(.3,.7,.4,1), box-shadow .22s ease,
+                background-color .18s ease, border-color .18s ease, color .18s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(1px) scale(.985); }
+  .nav-item:hover { transform: translateX(2px); }
+  .room-card:hover, .myagent-card:hover, .agent-card:hover { transform: translateY(-3px); }
+  .codex-row:hover { transform: translateY(-1px); box-shadow: var(--shadow-raised); }
+  .quest-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-panel); }
+  .wtab:hover, .bp-cat:hover, .adoc-btn:hover, .done-toggle:hover { transform: translateY(-1px); }
+  .hermes-fab:active, .notify-go:active, .tb-todo:active { transform: scale(.96); }
+  .theme-toggle button:active { transform: scale(.9); }
+  /* gentle stagger-free entrance on cards within a freshly shown grid */
+  .room-picker > *, .agent-grid > *, .myagent-grid > * { animation: fxRise .42s cubic-bezier(.2,.8,.2,1) both; }
+  .ceo-report { animation: fxFade .3s ease both; }
+}
+@keyframes fxRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fxFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* always-on (cheap) polish: pointer feedback + smooth images */
+.btn, .nav-item, .room-card, .myagent-card, .agent-card, .codex-row, .wtab,
+.bp-item, .adoc-btn, .done-toggle, .theme-toggle button, .tb-todo,
+.hermes-fab, .notify-go, .room-card-del, .drawer-close { will-change: transform; }
+button, a, .nav-item, .room-card, [role="button"] { -webkit-tap-highlight-color: transparent; }
+
+/* accessible focus ring (keyboard only) */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* primary button gets a soft accent halo on hover */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-gold:hover { box-shadow: 0 6px 18px -8px var(--gold-glow), 0 2px 6px -2px var(--gold-glow); }
+}
+
+/* ---------- responsive: off-canvas sidebar ---------- */
+.nav-burger { display: none; }
+.nav-scrim { display: none; }
+
+@media (max-width: 1180px) {
+  .content-pad { padding: 28px 28px 40px; }
+}
+
+/* ---------- iPad / tablet (portrait & landscape) ---------- */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .content-pad { padding: 24px 24px 38px; }
+  .page-title { font-size: 26px; }
+  /* dense grids relax to 2-up on tablet */
+  .room-picker { grid-template-columns: repeat(2, 1fr); }
+  .agent-grid, .myagent-grid, .roster-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .ov-grid, .overview-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .bp-grid { grid-template-columns: repeat(3, 1fr); }
+  /* keep build palette beside the room but a touch narrower */
+  .rv-body.is-build .room-canvas-wrap { min-width: 0; }
+}
+
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; width: min(284px, 84vw);
+    z-index: 1000; transform: translateX(-100%);
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+  }
+  body.nav-open .sidebar { transform: none; box-shadow: var(--shadow-pop); }
+  .nav-scrim {
+    display: block; position: fixed; inset: 0; z-index: 999;
+    background: rgba(15,18,25,.42); opacity: 0; pointer-events: none;
+    transition: opacity .26s ease;
+  }
+  body.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
+  .nav-burger {
+    display: inline-flex; flex-direction: column; gap: 4px; justify-content: center; align-items: center;
+    position: fixed; top: 12px; left: 12px; z-index: 1001;
+    width: 38px; height: 38px; padding: 0; cursor: pointer;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow-raised);
+  }
+  .nav-burger span { display: block; width: 17px; height: 2px; border-radius: 2px; background: var(--ink); transition: transform .25s ease, opacity .2s ease; }
+  body.nav-open .nav-burger span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  body.nav-open .nav-burger span:nth-child(2) { opacity: 0; }
+  body.nav-open .nav-burger span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+  .topbar { padding-left: 60px; }
+  .content-pad { padding: 22px 20px 36px; }
+  /* let horizontal control rows scroll rather than overflow */
+  .world-tabs, .theme-toggle { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .world-tabs::-webkit-scrollbar { display: none; }
+}
+
+@media (max-width: 640px) {
+  .topbar { gap: 8px; padding-right: 12px; padding-left: 58px; }
+  .topbar-title h1 { font-size: 16px; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-title .tt-en, .topbar-title .live-badge { display: none; }
+  .page-title { font-size: 22px; }
+  /* secondary topbar controls don't fit on a phone — hide the view-as control + token meter + avatar */
+  .topbar .viewas-ctl { display: none; }
+  .topbar .tb-stat { display: none; }
+  .topbar .avatar.sm { display: none; }
+  .theme-toggle { flex: 0 0 auto; }
+  .page-head { flex-wrap: wrap; align-items: flex-start; }
+  .page-head .row, .page-head > div:last-child { width: 100%; }
+  .content-pad { padding: 18px 14px 32px; }
+  .me-hero { padding: 18px 16px; }
+  .me-hero-actions { width: 100%; }
+  .room-picker { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .rv-topbar { flex-wrap: wrap; }
+  .build-palette { width: 100%; }
+  .hermes-dock { right: 14px; bottom: 14px; }
+  .notify-dock { width: calc(100vw - 24px); right: 12px; }
+  .drawer, .builder, .qedit-modal { width: 100vw; max-width: 100vw; border-radius: 0; }
+  /* stack two-up form/info grids */
+  .kv, .bf-2, .qa-grid, .toolrun-body { grid-template-columns: 1fr !important; }
+  .agent-grid, .myagent-grid, .roster-grid, .ov-grid, .overview-grid { grid-template-columns: 1fr !important; }
+  /* tab strips & chip rows scroll instead of wrapping awkwardly */
+  .world-tabs, .tabs, .seg { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; }
+  .world-tabs::-webkit-scrollbar, .tabs::-webkit-scrollbar { display: none; }
+  .wtab, .tab { white-space: nowrap; flex: 0 0 auto; }
+  /* drawer/builder become full-screen sheets that scroll */
+  .drawer, .builder { max-height: 100dvh; overflow-y: auto; }
+  .hermes-fulltab { height: auto; min-height: 60vh; }
+}
+
+@media (max-width: 420px) {
+  .room-picker { grid-template-columns: 1fr; }
+  .topbar .tbs-lbl, .topbar-title .tt-en { display: none; }
+}
+
+/* ============ Compare — deep-row loading skeleton (streamed in batches) ============ */
+.cmp-skel {
+  display: inline-block; width: 96px; height: 18px; border-radius: 6px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--ink) 8%, transparent) 25%,
+    color-mix(in srgb, var(--ink) 16%, transparent) 50%,
+    color-mix(in srgb, var(--ink) 8%, transparent) 75%);
+  background-size: 200% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cmp-skel { animation: cmpSkel 1.1s ease-in-out infinite; }
+  @keyframes cmpSkel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+}
+
+/* Always-visible link for compare detail (broken-link / missing-image URLs, "open real
+   pages"). The Recall screen's .rr-open is opacity:0 until a row hovers — reusing it here
+   left these links invisible, so compare gets its own accent link. */
+.cmp-link { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
+.cmp-link:hover { color: var(--gold-bright); }
+
+/* Deep body block → click to open the live page scrolled to + highlighting that exact text
+   (native scroll-to-text-fragment). Text stays readable; the ↗ hint is subtle until hover. */
+.cmp-jump { color: inherit; text-decoration: none; cursor: pointer; border-radius: 4px; }
+.cmp-jump:hover { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.cmp-jump .cmp-jump-ic { opacity: .4; font-size: .85em; white-space: nowrap; }
+.cmp-jump:hover .cmp-jump-ic { opacity: 1; color: var(--gold); }
+
+/* ============ Compare — deep-detail expand (smooth height-grow reveal) ============ */
+/* the expanded panel is tied to its row with a gold rail + a soft tint */
+.cmp-detail > td { border-left: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 5%, transparent); }
+/* row affordance: hover hints it opens; press gives a tactile flash; the open row stays lit + flush */
+.cmp-table tbody tr.is-row { cursor: pointer; transition: background-color .18s ease; }
+.cmp-table tbody tr.is-row:hover { background: color-mix(in srgb, var(--gold) 6%, transparent); }
+.cmp-table tbody tr.is-row:active { background: color-mix(in srgb, var(--gold) 13%, transparent); }
+.cmp-table tbody tr.is-open { background: color-mix(in srgb, var(--gold) 9%, transparent); }
+.cmp-table tbody tr.is-open > td { border-bottom: 0; }
+/* chevron on the deep badge: rotates ▸→▾, with a tiny pop when it lands open */
+.cmp-chev { display: inline-block; }
+@media (prefers-reduced-motion: no-preference) {
+  .cmp-chev { transition: transform .28s var(--spring-soft); }
+  .cmp-chev.is-open { transform: rotate(90deg); }
+
+  /* TRUE height grow: the grid row interpolates 0fr→1fr so the panel eases open
+     instead of snapping to full height. The inner wrapper clips during the grow. */
+  .cmp-grow { display: grid; grid-template-rows: 1fr; animation: cmpGrow .34s cubic-bezier(.22,.7,.24,1) both; }
+  .cmp-grow > .cmp-clip { min-height: 0; overflow: hidden; }
+  @keyframes cmpGrow { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
+
+  /* inner blocks settle in a gentle, bounce-free stagger once the panel is open */
+  .cmp-reveal > * { animation: cmpRise .4s cubic-bezier(.22,.7,.24,1) both; }
+  .cmp-reveal > *:nth-child(1) { animation-delay: .08s; }
+  .cmp-reveal > *:nth-child(2) { animation-delay: .14s; }
+  .cmp-reveal > *:nth-child(3) { animation-delay: .2s; }
+  .cmp-reveal > *:nth-child(4) { animation-delay: .26s; }
+  @keyframes cmpRise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+}
