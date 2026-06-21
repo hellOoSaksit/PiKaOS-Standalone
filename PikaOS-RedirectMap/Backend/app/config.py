@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Single source of truth for this app's version (UAT). Surfaced in /api/health + the OpenAPI
     # title. Bump on any behaviour/endpoint/schema change — see pikaos-dev-rules §6.5 (versioning)
     # + the registry PiKaOs-docs/docs/architecture/versions.md. Never hardcode the version elsewhere.
-    app_version: str = "0.2.0"
+    app_version: str = "0.2.1"
     environment: str = "development"
 
     # --- URL probing (verify old → new mapping) ---

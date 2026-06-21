@@ -1,4 +1,4 @@
-"""URL Redirect Map — standalone FastAPI app (v0.2).
+"""URL Redirect Map — standalone FastAPI app (v0.2.1).
 
 Just the redirect-map tool: a thin app that mounts the redirect router and a health check.
 No database / redis / minio / auth lifespan — the tool is stateless and (in this build) open

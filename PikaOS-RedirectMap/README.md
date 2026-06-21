@@ -1,4 +1,4 @@
-# URL Redirect Map — v0.2 (standalone)
+# URL Redirect Map — v0.2.1 (standalone)
 
 A self-contained tool for the **old-site → new-site URL redirect** workflow, in the standalone
 line of [PiKaOs](../../PiKaOs). You map each old URL to its new target, **verify** both sides with
