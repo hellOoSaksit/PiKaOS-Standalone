@@ -1,4 +1,4 @@
-"""Website Compare — standalone FastAPI app (v0.1).
+"""Website Compare — standalone FastAPI app (v0.1.1).
 
 Just the compare feature: a thin app that mounts the compare router and a health check.
 No database / redis / minio / auth lifespan — compare is stateless and (in this build) open

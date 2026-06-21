@@ -25,7 +25,7 @@ No login · no database · two small containers · deployable by a QA or content
 
 | App | What it does | Ports (fe / be) | Version | Source | Docs |
 |---|---|---|---|---|---|
-| **Website Compare** | Catch what changed between **UAT** and **Production** before go-live — sitemap coverage + a section-by-section deep content diff | `5174 / 8001` | **0.1.0** · [release](https://github.com/hellOoSaksit/PiKaOS-Standalone/releases/tag/website-compare-v0.1) | [`PikaOS-Compare/`](PikaOS-Compare) | [README](PikaOS-Compare/README.md) |
+| **Website Compare** | Catch what changed between **UAT** and **Production** before go-live — sitemap coverage + a section-by-section deep content diff | `5174 / 8001` | **0.1.1** · [release](https://github.com/hellOoSaksit/PiKaOS-Standalone/releases/tag/website-compare-v0.1.1) | [`PikaOS-Compare/`](PikaOS-Compare) | [README](PikaOS-Compare/README.md) |
 | **URL Redirect Map** | Map every **old-site URL → new target**, verify both sides, generate an IIS `web.config` + an Excel checklist | `5175 / 8002` | **0.2.1** · [release](https://github.com/hellOoSaksit/PiKaOS-Standalone/releases/tag/redirect-map-v0.2) | [`PikaOS-RedirectMap/`](PikaOS-RedirectMap) | [README](PikaOS-RedirectMap/README.md) |
 
 Host ports are owned by the shared
@@ -80,7 +80,7 @@ On Windows, double-click the app’s `start-*.bat`. Configuration is optional pe
 
 ```
 PiKaOS-Standalone/
-├─ PikaOS-Compare/        # Website Compare   (5174 / 8001) — v0.1
+├─ PikaOS-Compare/        # Website Compare   (5174 / 8001) — v0.1.1
 ├─ PikaOS-RedirectMap/    # URL Redirect Map  (5175 / 8002) — v0.2.1
 └─ .github/workflows/     # CI for both apps
 ```

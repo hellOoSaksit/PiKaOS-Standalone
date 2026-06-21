@@ -1,4 +1,4 @@
-/* PiKaOs-Compare (standalone) — Website Compare v0.1.
+/* PiKaOs-Compare (standalone) — Website Compare v0.1.1.
    A single-feature build: just the Compare screen. NO sidebar nav, NO login, NO other
    modules. A slim top bar carries the title/version, theme (day/night) + language (EN/TH);
    the rest of the page is the Compare screen itself. The imperative modal/loading hosts and
@@ -11,7 +11,7 @@ import { ToastProvider } from './components/ui/Toast.jsx';
 import { UILoadingHost, UIModalHost } from './lib/ui-modal.jsx';
 import { makeT } from './lib/i18n.jsx';
 
-export const VERSION = "0.1";
+export const VERSION = "0.1.1";
 export const PRODUCT = "Website Compare";
 
 function App() {

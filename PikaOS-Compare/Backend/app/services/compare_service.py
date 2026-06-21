@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
-import re
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
@@ -154,6 +153,39 @@ def _ok(status: int | None) -> bool:
     return status is not None and 200 <= status < 400
 
 
+# For human: build the {host: credentials} map a compare run dispatches auth by. A run hits BOTH the
+# Production and UAT hosts on one client, so creds are keyed by host (see _HostAuth). None when
+# neither side has credentials — the common, open-site case.
+def _host_auth_for(prod_url: str, uat_url: str, prod_auth, uat_auth) -> dict | None:
+    if not (prod_auth or uat_auth):
+        return None
+    return {urlsplit(prod_url).netloc: prod_auth, urlsplit(uat_url).netloc: uat_auth}
+
+
+# For human: an httpx client sized for the compare path — the pool covers prod+uat probes at the hard
+# concurrency ceiling, with the SSRF guard + per-host auth attached. follow_redirects=False so a 3xx
+# stays visible in coverage.
+def _coverage_client(host_auth: dict | None = None) -> httpx.AsyncClient:
+    ceiling = settings.compare_max_concurrency
+    return _make_client(
+        follow_redirects=False,
+        limits=httpx.Limits(max_connections=ceiling * 2 + 10, max_keepalive_connections=ceiling),
+        host_auth=host_auth,
+    )
+
+
+# For human: probe one prod/uat URL pair (both sides, under `sem`) and classify the coverage state.
+# Shared by the streamed coverage_batch and the one-shot compare so the classify+UrlCheck shape can't drift.
+async def _check_pair(client: httpx.AsyncClient, prod_url: str, uat_url: str, sem: asyncio.Semaphore, path: str) -> UrlCheck:
+    async with sem:
+        prod_status, uat_status = await asyncio.gather(_probe(client, prod_url), _probe(client, uat_url))
+    state, note = _classify(prod_status, uat_status)
+    return UrlCheck(
+        path=path, prodUrl=prod_url, uatUrl=uat_url,
+        prodStatus=prod_status, uatStatus=uat_status, state=state, note=note,
+    )
+
+
 async def _deep_compare(
     client: httpx.AsyncClient, src_url: str, tgt_url: str, *, sub_sem: asyncio.Semaphore | None = None
 ) -> DeepResult:
@@ -257,18 +289,11 @@ async def _deep_compare(
 async def deep_batch(payload: DeepBatchIn, *, _client: httpx.AsyncClient | None = None) -> list[DeepResult]:
     """Deep-compare a small batch of page pairs — lets the client stream sets so no
     single request runs long enough to hit the dev-proxy timeout."""
-    ceiling = settings.compare_max_concurrency
     own_client = _client is None
     # derive the two hosts from the first pair (src=Production, tgt=UAT) for per-host auth
-    host_auth = None
-    if payload.pairs and (payload.prodAuth or payload.uatAuth):
-        p0 = payload.pairs[0]
-        host_auth = {urlsplit(str(p0.src)).netloc: payload.prodAuth, urlsplit(str(p0.tgt)).netloc: payload.uatAuth}
-    client = _client or _make_client(
-        follow_redirects=False,
-        limits=httpx.Limits(max_connections=ceiling * 2 + 10, max_keepalive_connections=ceiling),
-        host_auth=host_auth,
-    )
+    host_auth = _host_auth_for(str(payload.pairs[0].src), str(payload.pairs[0].tgt),
+                               payload.prodAuth, payload.uatAuth) if payload.pairs else None
+    client = _client or _coverage_client(host_auth)
     sem = asyncio.Semaphore(max(1, min(len(payload.pairs), settings.compare_deep_concurrency)))
     # caps total img/link sub-requests across all pages in the batch (not just pages). Kept at
     # the polite coverage default — raising it backfires on WAF-fronted sites (throttling makes
@@ -338,33 +363,18 @@ async def coverage_batch(payload: CoverageBatchIn, *, _client: httpx.AsyncClient
     """Step 2 of streamed coverage: probe one chunk of pairs (both sides) and classify —
     aligned to the input order. Per-host auth is derived from the first pair's hosts (the
     whole batch shares the same Production/UAT origins)."""
-    ceiling = settings.compare_max_concurrency
     own_client = _client is None
-    host_auth = None
-    if payload.pairs and (payload.prodAuth or payload.uatAuth):
-        p0 = payload.pairs[0]
-        host_auth = {urlsplit(str(p0.prodUrl)).netloc: payload.prodAuth, urlsplit(str(p0.uatUrl)).netloc: payload.uatAuth}
-    client = _client or _make_client(
-        follow_redirects=False,
-        limits=httpx.Limits(max_connections=ceiling * 2 + 10, max_keepalive_connections=ceiling),
-        host_auth=host_auth,
-    )
+    host_auth = _host_auth_for(str(payload.pairs[0].prodUrl), str(payload.pairs[0].uatUrl),
+                               payload.prodAuth, payload.uatAuth) if payload.pairs else None
+    client = _client or _coverage_client(host_auth)
     requested = payload.concurrency or settings.compare_default_concurrency
-    effective = max(1, min(requested, ceiling))
+    effective = max(1, min(requested, settings.compare_max_concurrency))
     sem = asyncio.Semaphore(effective)
 
-    async def check(pair: CoveragePair) -> UrlCheck:
-        prod_url, uat_url = str(pair.prodUrl), str(pair.uatUrl)
-        async with sem:
-            prod_status, uat_status = await asyncio.gather(_probe(client, prod_url), _probe(client, uat_url))
-        state, note = _classify(prod_status, uat_status)
-        return UrlCheck(
-            path=pair.path, prodUrl=prod_url, uatUrl=uat_url,
-            prodStatus=prod_status, uatStatus=uat_status, state=state, note=note,
-        )
-
     try:
-        return list(await asyncio.gather(*(check(p) for p in payload.pairs)))
+        return list(await asyncio.gather(
+            *(_check_pair(client, str(p.prodUrl), str(p.uatUrl), sem, p.path) for p in payload.pairs)
+        ))
     finally:
         if own_client:
             await client.aclose()
@@ -392,37 +402,19 @@ async def compare(payload: CompareIn, *, _client: httpx.AsyncClient | None = Non
         if payload.uatSitemapUrl:
             assert_public_url(str(payload.uatSitemapUrl))
 
-    # Connection pool is sized to the hard ceiling (each URL probes prod + uat).
-    ceiling = settings.compare_max_concurrency
-    limits = httpx.Limits(max_connections=ceiling * 2 + 10, max_keepalive_connections=ceiling)
-    host_auth = {urlsplit(prod_base).netloc: payload.prodAuth, urlsplit(uat_base).netloc: payload.uatAuth}
-    client = _client or _make_client(follow_redirects=False, limits=limits, host_auth=host_auth)
+    client = _client or _coverage_client(_host_auth_for(prod_base, uat_base, payload.prodAuth, payload.uatAuth))
     try:
         prod_urls = await fetch_sitemap_urls(client, sitemap_url, max_urls=max_urls)
 
-        # Default to a polite parallelism so a WAF/CDN-fronted host doesn't rate-limit
-        # our burst into false "unreachable"/404s. A request may raise it via
-        # `concurrency`; we never exceed the hard ceiling regardless.
+        # Default to a polite parallelism so a WAF/CDN-fronted host doesn't rate-limit our burst
+        # into false "unreachable"/404s. A request may raise it via `concurrency`; never above the ceiling.
         requested = payload.concurrency or settings.compare_default_concurrency
-        effective = max(1, min(requested, ceiling))
+        effective = max(1, min(requested, settings.compare_max_concurrency))
         sem = asyncio.Semaphore(effective)
 
         async def check(prod_url: str) -> UrlCheck:
             uat_url = swap_origin(prod_url, uat_scheme, uat_netloc)
-            async with sem:
-                prod_status, uat_status = await asyncio.gather(
-                    _probe(client, prod_url), _probe(client, uat_url)
-                )
-            state, note = _classify(prod_status, uat_status)
-            return UrlCheck(
-                path=_rel_key(prod_url),
-                prodUrl=prod_url,
-                uatUrl=uat_url,
-                prodStatus=prod_status,
-                uatStatus=uat_status,
-                state=state,
-                note=note,
-            )
+            return await _check_pair(client, prod_url, uat_url, sem, _rel_key(prod_url))
 
         items = await asyncio.gather(*(check(u) for u in prod_urls))
 

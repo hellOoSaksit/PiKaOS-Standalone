@@ -1,4 +1,4 @@
-# Website Compare — v0.1 (standalone)
+# Website Compare — v0.1.1 (standalone)
 
 A self-contained build of the **Compare** feature lifted out of [PiKaOs](../../PiKaOs). It compares a
 **UAT** site against **Production** — sitemap URL coverage + an optional deep body/heading/SEO/
