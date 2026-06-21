@@ -27,6 +27,35 @@ export function saveRows(rows) {
   try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch (e) {}
 }
 
+// --- HTTP Basic Auth credentials (per host) ---------------------------------
+// Some sites — usually a UAT/staging env — sit behind a browser "Sign in" dialog (HTTP Basic
+// Auth); a probe just gets 401. The user adds host + username + password here so verify/discover
+// can authenticate. Kept in THIS browser only (localStorage), like the rows — the tool is stateless
+// and these are sent on the request, never stored server-side. Plaintext in localStorage: fine for
+// an internal tool, but don't reuse a sensitive personal password.
+
+const CRED_KEY = "pikaos.redirectmap.creds.v1";
+
+export function newCred(extra = {}) {
+  const rnd = Math.random().toString(36).slice(2, 8);
+  return { id: `c_${Date.now().toString(36)}_${rnd}`, host: "", username: "", password: "", ...extra };
+}
+
+export function loadCreds() {
+  try {
+    const raw = localStorage.getItem(CRED_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.map((c) => ({ ...newCred(), ...c }));
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function saveCreds(creds) {
+  try { localStorage.setItem(CRED_KEY, JSON.stringify(creds)); } catch (e) {}
+}
+
 // --- CSV import / export ----------------------------------------------------
 // The central checklist is a spreadsheet; CSV is the lingua franca. Import detects columns by
 // header keyword (Thai + English) so the extra columns in the template don't break it. Export

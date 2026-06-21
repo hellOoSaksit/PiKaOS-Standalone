@@ -15,9 +15,9 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import Response
 
 from ..schemas import (
-    DiscoverIn, DiscoverOut, ExportIn, FilesIn, FilesOut, VerifyIn, VerifyOut, WebConfigIn, WebConfigOut,
+    DiscoverIn, DiscoverOut, ExportIn, VerifyIn, VerifyOut, WebConfigIn, WebConfigOut,
 )
-from ..services import checklist_xlsx, discover_service, files_service, verify_service, webconfig
+from ..services import checklist_xlsx, discover_service, verify_service, webconfig
 from ..services.net_guard import BlockedURLError
 from ..services.sitemap import SitemapError
 
@@ -73,17 +73,6 @@ async def verify(body: VerifyIn, request: Request) -> VerifyOut:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Blocked URL: {exc}")
 
 
-@router.post("/files", response_model=FilesOut)
-async def scan_files(body: FilesIn, request: Request) -> FilesOut:
-    """Crawl both sites' pages → compare downloadable files (PDF/DOC/…) by filename."""
-    try:
-        return await _run_cancellable(request, files_service.scan(body))
-    except BlockedURLError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Blocked URL: {exc}")
-    except SitemapError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Sitemap error: {exc}")
-
-
 @router.post("/webconfig", response_model=WebConfigOut)
 async def webconfig_gen(body: WebConfigIn) -> WebConfigOut:
     """Generate an IIS URL-Rewrite web.config from the mapping rows (pure transform, no network)."""
@@ -92,8 +81,8 @@ async def webconfig_gen(body: WebConfigIn) -> WebConfigOut:
 
 @router.post("/export")
 async def export_xlsx(body: ExportIn) -> Response:
-    """Export the mapping rows as an .xlsx matching the central checklist template (+ Files sheet)."""
-    data = checklist_xlsx.build(body.rows, files=body.files)
+    """Export the mapping rows as an .xlsx matching the central checklist template."""
+    data = checklist_xlsx.build(body.rows)
     return Response(
         content=data,
         media_type=XLSX_MEDIA_TYPE,

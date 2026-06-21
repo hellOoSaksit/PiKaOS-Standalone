@@ -19,6 +19,26 @@ STATUS_PROBLEM = "ติดปัญหา"            # new URL has no page / m
 STATUS_SKIP = "ไม่ต้อง Redirect"       # old URL is gone/irrelevant — nothing to redirect
 
 
+class Credential(BaseModel):
+    """HTTP Basic Auth for ONE host (e.g. a UAT site behind a browser "Sign in" dialog).
+
+    Matched to a probed URL by host. Secrets ride on the request only — never persisted, never in
+    config (the tool is stateless). `host` accepts a bare host or a full URL; only its host is used.
+    """
+
+    host: str = Field(default="", max_length=255, description="Host the creds apply to, e.g. site.uat.example.com")
+    username: str = Field(default="", max_length=255)
+    password: str = Field(default="", max_length=255)
+
+
+class MatchCandidate(BaseModel):
+    """One close new-site URL for an old URL, by path similarity — an alternative the user can eyeball
+    when the chosen match isn't obviously right (the new site reorganised paths). Read-only context."""
+
+    url: str = Field(max_length=2048)
+    score: float = Field(description="Path-similarity % to the old URL (0–100)")
+
+
 class MappingRow(BaseModel):
     """One redirect mapping: old URL → new URL, tagged by Symbol/site.
 
@@ -34,6 +54,13 @@ class MappingRow(BaseModel):
     # Set by Discover when BOTH sitemaps are read: how close the old path is to the matched new URL's
     # path (0–100; 100 = exact path exists on the new site). None = no new sitemap → domain-swap fallback.
     matchScore: float | None = Field(default=None)
+    # Top alternative new URLs by path similarity (best first; [0] is the chosen newUrl). Set by
+    # Discover from the new sitemap — surfaced as a "close matches" list so the user can sanity-check
+    # the pick and open a better one. Empty on a domain-swap (no new sitemap to compare against).
+    candidates: list[MatchCandidate] = Field(default_factory=list, max_length=10)
+    # Set by Discover when this newUrl is the fuzzy best-match for MORE THAN ONE old URL — a sign the
+    # match was forced (the new site has no distinct page for each old one). A cue to double-check.
+    collision: bool = Field(default=False)
 
 
 # --- verify -----------------------------------------------------------------
@@ -42,6 +69,12 @@ class MappingRow(BaseModel):
 class VerifyIn(BaseModel):
     rows: list[MappingRow] = Field(min_length=1, max_length=2000)
     concurrency: int | None = Field(default=None, ge=1, le=100, description="Cap on parallel probes")
+    # When True (default) each row's probe GETs the page HTML to also compare linked files and flag
+    # a thin (H1-only) body. False = fast status-only probe (no body fetch).
+    deepCheck: bool = Field(default=True, description="Also fetch HTML to compare files + check body")
+    # Optional HTTP Basic Auth per host — for old/new sites behind a login (e.g. UAT). Matched to
+    # each probed URL by host; a side whose host has no credential is probed as before.
+    credentials: list[Credential] = Field(default_factory=list, max_length=50)
 
 
 class RowVerdict(BaseModel):
@@ -63,6 +96,26 @@ class RowVerdict(BaseModel):
     suggestedStatus: str = STATUS_PENDING   # one of the STATUS_* values above
     suggestedNote: str = ""                 # human-readable reason / next action
     suggestedTarget: str | None = None      # fallback target when newUrl 404s (e.g. new-site home)
+    # --- deep check (only when VerifyIn.deepCheck): compare files + detect thin body, per row ---
+    # Downloadable files (PDF/DOC/…) LINKED in the old page vs the new page — by filename.
+    oldFileCount: int = 0
+    newFileCount: int = 0
+    filesMatched: list[str] = Field(default_factory=list)   # filenames linked on BOTH pages
+    filesOnlyOld: list[str] = Field(default_factory=list)   # on the old page, missing on the new
+    filesOnlyNew: list[str] = Field(default_factory=list)   # added on the new page
+    filesSame: bool | None = None           # True = identical file set, False = differ, None = no files / not checked
+    # Body check (both sides): a page that has an <h1> but almost no body content beyond it.
+    oldHasH1: bool = False
+    newHasH1: bool = False
+    oldBodyThin: bool = False                # old page is H1-only (stub)
+    newBodyThin: bool = False                # new page is H1-only — incomplete migration
+    oldHasBody: bool = False                 # old page has real visible content
+    newHasBody: bool = False                 # new page has real visible content
+    oldError: str = ""                       # soft-error read from the OLD body (e.g. "500"); "" = looks fine
+    newError: str = ""                       # soft-error read from the NEW body even if status was 200
+    oldSpa: bool = False                      # old page is browser-only (WAF challenge / SPA shell) — body/files unreadable server-side
+    newSpa: bool = False                      # new page is browser-only (WAF challenge / SPA shell) — don't trust its body/file check
+    bodyChecked: bool = False                # the body/file pass actually ran for this row
 
 
 class VerifyOut(BaseModel):
@@ -102,6 +155,8 @@ class DiscoverIn(BaseModel):
     # (with a similarity %). Best-effort: if it can't be read, fall back to a same-path domain swap.
     newSitemapUrl: AnyHttpUrl | None = Field(default=None, description="Override the new-site sitemap URL")
     maxUrls: int | None = Field(default=None, ge=1, le=5000, description="Cap on URLs pulled from each sitemap")
+    # Optional HTTP Basic Auth per host — when an old/new site (or its sitemap) sits behind a login.
+    credentials: list[Credential] = Field(default_factory=list, max_length=50)
 
 
 class DiscoverOut(BaseModel):
@@ -110,36 +165,44 @@ class DiscoverOut(BaseModel):
     count: int
 
 
-# --- file check (crawl pages → compare downloadable files old vs new) -------
-
-
-class FilesIn(BaseModel):
-    oldBase: AnyHttpUrl = Field(description="Old-site origin")
-    newBase: AnyHttpUrl = Field(description="New-site origin")
-    sitemapUrl: AnyHttpUrl | None = Field(default=None, description="Override old-site sitemap")
-    newSitemapUrl: AnyHttpUrl | None = Field(default=None, description="Override new-site sitemap")
-    maxPages: int | None = Field(default=None, ge=1, le=2000, description="Cap on pages crawled per site")
-
-
-class FileItem(BaseModel):
-    name: str                               # filename (lowercased) — the key files are matched by
-    oldUrl: str | None = None               # where it's linked on the old site (if present)
-    newUrl: str | None = None               # where it's linked on the new site (if present)
-
-
-class FilesOut(BaseModel):
-    oldCount: int                           # distinct files found on the old site
-    newCount: int                           # distinct files found on the new site
-    oldPages: int                           # pages actually crawled on the old site
-    newPages: int
-    matched: list[FileItem] = Field(default_factory=list)   # same filename on both sites
-    onlyOld: list[FileItem] = Field(default_factory=list)   # file on old only (gone on new)
-    onlyNew: list[FileItem] = Field(default_factory=list)   # file on new only (added)
-
-
 # --- .xlsx export -----------------------------------------------------------
 
 
+class ExportRow(MappingRow):
+    """A mapping row PLUS the verify findings (when the row was verified) — drives the rich
+    "Verify Detail" sheet. Every check field is optional/defaulted, so a plain unverified row
+    (just symbol/old/new/status/note) still validates and exports."""
+
+    # old side
+    oldStatus: int | None = None
+    oldRedirectsTo: str | None = None
+    oldReachable: bool = False
+    # new side
+    newStatus: int | None = None
+    newFinalUrl: str | None = None
+    newOk: bool = False
+    alreadyRedirected: bool = False
+    suggestedTarget: str | None = None
+    # body (both sides)
+    oldHasBody: bool = False
+    newHasBody: bool = False
+    oldBodyThin: bool = False
+    newBodyThin: bool = False
+    oldHasH1: bool = False
+    newHasH1: bool = False
+    oldError: str = ""
+    newError: str = ""
+    oldSpa: bool = False
+    newSpa: bool = False
+    bodyChecked: bool = False
+    # downloadable files linked on each page
+    oldFileCount: int = 0
+    newFileCount: int = 0
+    filesSame: bool | None = None
+    filesMatched: list[str] = Field(default_factory=list)
+    filesOnlyOld: list[str] = Field(default_factory=list)
+    filesOnlyNew: list[str] = Field(default_factory=list)
+
+
 class ExportIn(BaseModel):
-    rows: list[MappingRow] = Field(min_length=1, max_length=5000)
-    files: FilesOut | None = Field(default=None, description="Optional file-comparison → adds a Files sheet")
+    rows: list[ExportRow] = Field(min_length=1, max_length=5000)

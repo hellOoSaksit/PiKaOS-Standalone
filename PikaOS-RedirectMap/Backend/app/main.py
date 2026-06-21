@@ -1,4 +1,4 @@
-"""URL Redirect Map — standalone FastAPI app (v0.1).
+"""URL Redirect Map — standalone FastAPI app (v0.2).
 
 Just the redirect-map tool: a thin app that mounts the redirect router and a health check.
 No database / redis / minio / auth lifespan — the tool is stateless and (in this build) open
@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .routers import redirect
 
-app = FastAPI(title="URL Redirect Map", version="0.1.0")
+app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,4 +27,4 @@ app.include_router(redirect.router)
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "app": settings.app_name, "version": "0.1.0"}
+    return {"status": "ok", "app": settings.app_name, "version": settings.app_version}

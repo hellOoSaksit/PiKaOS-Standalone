@@ -42,8 +42,6 @@ async function raw(path, { method = "GET", body, signal } = {}) {
 export async function discoverUrls(body, signal) { return raw("/redirect/discover", { method: "POST", body, signal }); }
 // POST /api/redirect/verify    → probe each row (old + new side) → suggested status/note.
 export async function verifyRows(body, signal) { return raw("/redirect/verify", { method: "POST", body, signal }); }
-// POST /api/redirect/files     → crawl both sites' pages → compare downloadable files (PDF/DOC/…).
-export async function scanFiles(body, signal) { return raw("/redirect/files", { method: "POST", body, signal }); }
 // POST /api/redirect/webconfig → rows → IIS URL-Rewrite web.config text (pure transform).
 export async function genWebConfig(body, signal) { return raw("/redirect/webconfig", { method: "POST", body, signal }); }
 // POST /api/redirect/export → rows → .xlsx checklist (binary). Returns a Blob to download.

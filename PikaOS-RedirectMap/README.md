@@ -1,4 +1,4 @@
-# URL Redirect Map — v0.1 (standalone)
+# URL Redirect Map — v0.2 (standalone)
 
 A self-contained tool for the **old-site → new-site URL redirect** workflow, in the standalone
 line of [PiKaOs](../../PiKaOs). You map each old URL to its new target, **verify** both sides,
@@ -50,9 +50,9 @@ copy [`.env.example`](.env.example) → `.env` only to override (CORS, SSRF guar
 | | |
 |---|---|
 | **Frontend** | Vite + React, one screen (`Frontend/src/screens/screens-redirect.jsx`) + the UI-kit pieces it uses. Proxies `/api` → backend. CSV parse/build + download are client-side. |
-| **Backend** | FastAPI, **open** (no auth): `POST /api/redirect/verify` · `POST /api/redirect/webconfig` · `GET /api/health`. Stateless — no DB. |
+| **Backend** | FastAPI, **open** (no auth): `POST /api/redirect/{discover,verify,webconfig,export}` · `GET /api/health`. Stateless — no DB. |
 
-Backend layering: `routers/redirect.py` → `services/{verify_service, webconfig, probe, net_guard}.py`.
+Backend layering: `routers/redirect.py` → `services/{discover_service, verify_service, page_inspect, probe, sitemap, net_guard, webconfig, checklist_xlsx, credentials}.py`.
 Outbound probes are **SSRF-guarded** (`net_guard`, reused from PiKaOs Compare) — private/internal
 targets are rejected (toggle with `REDIRECT_SSRF_BLOCK_PRIVATE`).
 
@@ -63,6 +63,7 @@ targets are rejected (toggle with `REDIRECT_SSRF_BLOCK_PRIVATE`).
 | `POST /api/redirect/discover` | Read the old site's sitemap → propose one `old → new` row per URL (domain-swapped onto the new base). Cancellable. |
 | `POST /api/redirect/verify` | Probe each mapping row (old + new side) → per-row status code, `alreadyRedirected`, suggested status/note/fallback. Cancellable (abort on the client stops the in-flight probes); the UI streams it in chunks so a whole-site batch fills live. |
 | `POST /api/redirect/webconfig` | Rows → IIS URL-Rewrite `web.config` text + rule count + which rows were skipped (missing URL). Pure transform, no network. |
+| `POST /api/redirect/export` | Rows → `.xlsx` matching the central checklist template (Redirect Checklist · Symbol Setup · Summary · ผลตรวจ sheets). |
 | `GET  /api/health` | Liveness. |
 
 ## Scope (by decision)
@@ -71,8 +72,8 @@ targets are rejected (toggle with `REDIRECT_SSRF_BLOCK_PRIVATE`).
   live 301s. The old domain's own infra (Azure App Service / IIS) does that using the generated
   `web.config`.
 - **Config target = IIS web.config** — the old WHA sites run on Azure App Service (Windows/IIS).
-  nginx / Front Door / generic-list targets are not generated in v0.1.
-- **No login**, single screen, deps trimmed to `fastapi · uvicorn · httpx · pydantic · pydantic-settings`.
+  nginx / Front Door / generic-list targets are not generated (as of v0.2).
+- **No login**, single screen, deps trimmed to `fastapi · uvicorn · httpx · pydantic · pydantic-settings · openpyxl`.
 
 Extracted from **[PiKaOs](../../PiKaOs)** as the second build in the standalone line (after
 [PikaOS-Compare](../PikaOS-Compare)).

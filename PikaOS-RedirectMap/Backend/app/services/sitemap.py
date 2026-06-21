@@ -16,6 +16,13 @@ class SitemapError(Exception):
     """Sitemap could not be fetched or parsed."""
 
 
+def _is_ssl_error(exc: Exception) -> bool:
+    """True when a fetch failed on TLS cert verification (an incomplete chain) — the cue to retry on
+    a no-verify client. Migrated sites often ship a broken chain that a browser fixes via AIA-fetch."""
+    s = f"{type(exc).__name__}: {exc}"
+    return "SSL" in s or "CERTIFICATE" in s.upper()
+
+
 def _localname(tag: str) -> str:
     """Strip the XML namespace: '{http://...}url' -> 'url'."""
     return tag.rsplit("}", 1)[-1].lower()
@@ -55,17 +62,23 @@ async def fetch_sitemap_urls(
     *,
     max_urls: int,
     max_sitemaps: int = 50,
+    auth: httpx.Auth | None = None,
+    insecure: httpx.AsyncClient | None = None,
 ) -> list[str]:
     """Fetch `sitemap_url` and return de-duplicated page URLs.
 
     Follows sitemap-index files breadth-first up to `max_sitemaps` documents and
-    stops collecting once `max_urls` page URLs have been gathered.
+    stops collecting once `max_urls` page URLs have been gathered. `auth` (HTTP Basic) is
+    sent on every fetch when the site's sitemap sits behind a login (UAT etc.); None = open.
+    `insecure` is a no-TLS-verify client: when a fetch fails on a bad cert chain, the crawl
+    switches to it so a sitemap on a misconfigured-TLS host (common after a migration) still loads.
     """
     seen_docs: set[str] = set()
     queue: list[str] = [sitemap_url]
     pages: list[str] = []
     seen_pages: set[str] = set()
     docs_read = 0
+    use = client                       # switched to `insecure` for the rest of the crawl on a cert error
 
     while queue and len(pages) < max_urls and docs_read < max_sitemaps:
         doc = queue.pop(0)
@@ -75,13 +88,24 @@ async def fetch_sitemap_urls(
         docs_read += 1
         try:
             # follow redirects — a 301 from /sitemap.xml to the real sitemap is common
-            resp = await client.get(doc, follow_redirects=True)
+            resp = await use.get(doc, follow_redirects=True, auth=auth)
         except httpx.HTTPError as exc:
-            if doc == sitemap_url:
+            # bad cert chain → retry this doc on the no-verify client and use it from here on
+            if insecure is not None and use is client and _is_ssl_error(exc):
+                use = insecure
+                try:
+                    resp = await use.get(doc, follow_redirects=True, auth=auth)
+                except httpx.HTTPError as exc2:
+                    if doc == sitemap_url:
+                        reason = str(exc2) or type(exc2).__name__
+                        raise SitemapError(f"could not fetch {doc} ({reason})") from exc2
+                    continue
+            elif doc == sitemap_url:
                 # str(exc) is often empty (ConnectError/timeout) — name the type + URL
                 reason = str(exc) or type(exc).__name__
                 raise SitemapError(f"could not fetch {doc} ({reason})") from exc
-            continue  # a broken child sitemap shouldn't kill the whole crawl
+            else:
+                continue  # a broken child sitemap shouldn't kill the whole crawl
         if resp.status_code != 200:
             if doc == sitemap_url:
                 raise SitemapError(f"sitemap {doc} returned HTTP {resp.status_code}")

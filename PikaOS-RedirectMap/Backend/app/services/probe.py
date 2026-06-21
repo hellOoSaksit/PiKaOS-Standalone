@@ -29,53 +29,166 @@ _HEADERS = {
 }
 
 
-def make_client(*, follow_redirects: bool) -> httpx.AsyncClient:
+def make_client(*, follow_redirects: bool, verify: bool = True) -> httpx.AsyncClient:
     """An httpx client for the probe path with the SSRF guard attached (it fires on every
     request incl. redirect hops — see net_guard). `follow_redirects` distinguishes the two
     probe modes: old side = False (see the 3xx + where it points), new side = True (judge the
-    final landing page)."""
+    final landing page). `verify=False` builds a no-TLS-verify client for the bad-cert fallback."""
     return httpx.AsyncClient(
         headers=_HEADERS,
         timeout=httpx.Timeout(settings.redirect_timeout_seconds),
         follow_redirects=follow_redirects,
         event_hooks=guarded_event_hooks(),
+        verify=verify,
     )
 
 
-async def _request(client: httpx.AsyncClient, url: str) -> httpx.Response | None:
-    """Fetch `url` → its Response, or None if it failed after retries.
+def _is_ssl_error(exc: Exception) -> bool:
+    """True when a request failed because of TLS certificate verification (an incomplete chain),
+    NOT a DNS/refused/timeout error — only those are worth retrying without verification."""
+    s = f"{type(exc).__name__}: {exc}"
+    return "SSL" in s or "CERTIFICATE" in s.upper() or "certificate verify failed" in s
 
-    HEAD first; fall back to GET when HEAD is unsupported (405/501) or errors out. A transient
-    connect/read failure is retried `redirect_probe_retries` times with linear backoff."""
-    for attempt in range(settings.redirect_probe_retries + 1):
+
+# WAF / rate-limit statuses worth re-probing after a cooldown: a burst into a WAF-fronted site
+# (e.g. WHA's AWS WAF) gets these even though a browser sees the page. NOT 401 (needs auth, a retry
+# won't help) and NOT 404 (genuinely absent).
+_RETRY_STATUS = {403, 405, 429, 503}
+
+
+def _should_retry(resp: httpx.Response | None, attempt: int) -> bool:
+    """Whether to re-probe. resp is None = a transient network failure (retry up to
+    `redirect_probe_retries`); a blocked status = a WAF/rate-limit wall (retry up to the usually
+    larger `redirect_blocked_retries`, since a cooldown often clears it)."""
+    if resp is None:
+        return attempt < settings.redirect_probe_retries
+    if resp.status_code in _RETRY_STATUS:
+        return attempt < settings.redirect_blocked_retries
+    return False
+
+
+def _retry_delay(resp: httpx.Response | None, attempt: int) -> float:
+    """Linear backoff. A WAF block waits longer than a transient network blip to give the WAF time
+    to cool down before the next probe."""
+    base = (settings.redirect_probe_backoff_seconds if resp is None
+            else settings.redirect_blocked_backoff_seconds)
+    return base * (attempt + 1)
+
+
+async def _head_then_get(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None) -> httpx.Response:
+    """One probe attempt: HEAD, falling back to GET when HEAD is unsupported (405/501) or the server
+    errors on it. Raises httpx.HTTPError on a network/TLS failure (the caller decides what to do)."""
+    resp = await client.head(url, auth=auth)
+    if resp.status_code in (405, 501) or (resp.status_code >= 400 and resp.status_code != 404):
+        resp = await client.get(url, auth=auth)
+    return resp
+
+
+async def _request(
+    client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+    insecure: httpx.AsyncClient | None = None,
+) -> tuple[httpx.Response | None, bool]:
+    """Fetch `url` → (Response or None after retries, ssl_insecure). HEAD first, GET fallback.
+    Retried on a transient failure AND on a WAF/rate-limit status (403/405/429/503). On a TLS
+    cert-verification failure, retries with the no-verify `insecure` client (when provided — i.e.
+    the host has no Basic Auth to leak) and reports ssl_insecure=True. `auth` is applied to every
+    request; None = no auth (the common case)."""
+    attempts = max(settings.redirect_probe_retries, settings.redirect_blocked_retries) + 1
+    resp: httpx.Response | None = None
+    ssl_insecure = False
+    for attempt in range(attempts):
+        use = insecure if ssl_insecure else client
         try:
-            resp = await client.head(url)
-            if resp.status_code in (405, 501) or (resp.status_code >= 400 and resp.status_code != 404):
-                resp = await client.get(url)
-            return resp
-        except httpx.HTTPError:
-            try:
-                return await client.get(url)
-            except httpx.HTTPError:
-                if attempt < settings.redirect_probe_retries:
-                    await asyncio.sleep(settings.redirect_probe_backoff_seconds * (attempt + 1))
+            resp = await _head_then_get(use, url, auth)
+        except httpx.HTTPError as exc:
+            if insecure is not None and not ssl_insecure and _is_ssl_error(exc):
+                ssl_insecure = True
+                try:
+                    resp = await _head_then_get(insecure, url, auth)
+                except httpx.HTTPError:
+                    resp = None
+            else:
+                resp = None
+        if not _should_retry(resp, attempt):
+            return resp, ssl_insecure
+        await asyncio.sleep(_retry_delay(resp, attempt))
+    return resp, ssl_insecure
+
+
+async def probe_no_follow(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+                          insecure: httpx.AsyncClient | None = None) -> tuple[int | None, str | None, bool]:
+    """Old-side probe: (status, Location, ssl_insecure). Redirects are NOT followed, so a 3xx and its
+    target stay visible — that's how we detect an old URL that already redirects onto the new one.
+    The client must have been built with follow_redirects=False."""
+    resp, ssl_insecure = await _request(client, url, auth, insecure)
+    if resp is None:
+        return None, None, ssl_insecure
+    return resp.status_code, resp.headers.get("location"), ssl_insecure
+
+
+async def probe_follow(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+                       insecure: httpx.AsyncClient | None = None) -> tuple[int | None, str | None, bool]:
+    """New-side probe: (final status, final URL, ssl_insecure) after following redirects — judges
+    whether the new URL actually lands on a real page. The client must have follow_redirects=True."""
+    resp, ssl_insecure = await _request(client, url, auth, insecure)
+    if resp is None:
+        return None, None, ssl_insecure
+    return resp.status_code, str(resp.url), ssl_insecure
+
+
+# --- body-returning variants (deep check: also need the page HTML for files + body) ---------
+# A GET (HEAD has no body), retried like _request (transient + WAF/rate-limit). Returns the HTML
+# only for a real 2xx HTML page — a redirect/blocked/non-HTML response yields html=None.
+
+
+async def _request_get(
+    client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+    insecure: httpx.AsyncClient | None = None,
+) -> tuple[httpx.Response | None, bool]:
+    attempts = max(settings.redirect_probe_retries, settings.redirect_blocked_retries) + 1
+    resp: httpx.Response | None = None
+    ssl_insecure = False
+    for attempt in range(attempts):
+        use = insecure if ssl_insecure else client
+        try:
+            resp = await use.get(url, auth=auth)
+        except httpx.HTTPError as exc:
+            if insecure is not None and not ssl_insecure and _is_ssl_error(exc):
+                ssl_insecure = True
+                try:
+                    resp = await insecure.get(url, auth=auth)
+                except httpx.HTTPError:
+                    resp = None
+            else:
+                resp = None
+        if not _should_retry(resp, attempt):
+            return resp, ssl_insecure
+        await asyncio.sleep(_retry_delay(resp, attempt))
+    return resp, ssl_insecure
+
+
+def _html_of(resp: httpx.Response) -> str | None:
+    ct = resp.headers.get("content-type", "").lower()
+    if 200 <= resp.status_code < 300 and "html" in ct:
+        return resp.text
     return None
 
 
-async def probe_no_follow(client: httpx.AsyncClient, url: str) -> tuple[int | None, str | None]:
-    """Old-side probe: (status, Location). Redirects are NOT followed, so a 3xx and its target
-    stay visible — that's how we detect an old URL that already redirects onto the new one.
-    The client must have been built with follow_redirects=False."""
-    resp = await _request(client, url)
+async def probe_no_follow_body(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+                               insecure: httpx.AsyncClient | None = None) -> tuple[int | None, str | None, str | None, bool]:
+    """Old-side deep probe: (status, Location, html, ssl_insecure). Redirects NOT followed. html is
+    the old page's content only when it's a live 2xx HTML page. follow_redirects=False client."""
+    resp, ssl_insecure = await _request_get(client, url, auth, insecure)
     if resp is None:
-        return None, None
-    return resp.status_code, resp.headers.get("location")
+        return None, None, None, ssl_insecure
+    return resp.status_code, resp.headers.get("location"), _html_of(resp), ssl_insecure
 
 
-async def probe_follow(client: httpx.AsyncClient, url: str) -> tuple[int | None, str | None]:
-    """New-side probe: (final status, final URL) after following redirects — judges whether the
-    new URL actually lands on a real page. The client must have follow_redirects=True."""
-    resp = await _request(client, url)
+async def probe_follow_body(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+                            insecure: httpx.AsyncClient | None = None) -> tuple[int | None, str | None, str | None, bool]:
+    """New-side deep probe: (final status, final URL, html, ssl_insecure) after following redirects.
+    follow_redirects=True client."""
+    resp, ssl_insecure = await _request_get(client, url, auth, insecure)
     if resp is None:
-        return None, None
-    return resp.status_code, str(resp.url)
+        return None, None, None, ssl_insecure
+    return resp.status_code, str(resp.url), _html_of(resp), ssl_insecure

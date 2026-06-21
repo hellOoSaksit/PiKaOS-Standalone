@@ -1,4 +1,4 @@
-/* PiKaOs-RedirectMap (standalone) — URL Redirect Map v0.1.
+/* PiKaOs-RedirectMap (standalone) — URL Redirect Map v0.2.
    A single-feature build: just the redirect-map screen. NO sidebar nav, NO login, NO other
    modules. A slim top bar carries the title/version, theme (day/night) + language (EN/TH);
    the rest of the page is the screen itself. The imperative modal/loading hosts and the toast
@@ -9,7 +9,7 @@ import { Redirect } from './screens/screens-redirect.jsx';
 import { ToastProvider } from './components/ui/Toast.jsx';
 import { UILoadingHost, UIModalHost } from './lib/ui-modal.jsx';
 
-export const VERSION = "0.1";
+export const VERSION = "0.2";
 export const PRODUCT = "URL Redirect Map";
 
 function App() {
