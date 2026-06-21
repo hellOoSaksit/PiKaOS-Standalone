@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .routers import compare
 
-app = FastAPI(title="Website Compare", version="0.1.0")
+app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,4 +27,4 @@ app.include_router(compare.router)
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "app": settings.app_name, "version": "0.1.0"}
+    return {"status": "ok", "app": settings.app_name, "version": settings.app_version}

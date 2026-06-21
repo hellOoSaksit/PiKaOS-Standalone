@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Website Compare"
+    # Single source of truth for this app's version (UAT). Surfaced in /api/health + the OpenAPI
+    # title. Bump on any behaviour/endpoint/schema change — see pikaos-dev-rules §6.5 (versioning)
+    # + the registry PiKaOs-docs/docs/architecture/versions.md. Never hardcode the version elsewhere.
+    app_version: str = "0.1.0"
     environment: str = "development"
 
     # --- UAT vs Production sitemap comparison ---

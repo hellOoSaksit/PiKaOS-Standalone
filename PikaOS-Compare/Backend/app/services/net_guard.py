@@ -2,8 +2,8 @@
 
 Compare is the only feature that fetches arbitrary user URLs. Without a guard a
 user could aim it at internal hosts — cloud metadata (169.254.169.254), `minio:9000`,
-`localhost`, RFC1918 ranges — and via `/api/compare/render` (which returns the body)
-read internal responses back. See docs/features/compare-hardening.md §1.
+`localhost`, RFC1918 ranges — and read the internal responses back through the
+compare results. See docs/features/compare-hardening.md §1.
 
 Two layers use this module:
 - `assert_public_url()` — validate user-supplied URLs **up front**; the router maps the

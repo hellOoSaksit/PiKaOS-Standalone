@@ -1,0 +1,55 @@
+# CI — guards the standalone line: unit tests + the "version is config-driven, never hardcoded" rule.
+# One repo holds both apps (PikaOS-Compare, PikaOS-RedirectMap). Backends are pure FastAPI; the
+# pure-logic tests (e.g. page_inspect) run with no server.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  redirectmap-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PikaOS-RedirectMap/Backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - name: Unit tests (page_inspect + webconfig — pure, no server)
+        run: pytest -q
+
+  compare-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PikaOS-Compare/Backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - name: Unit tests (content extract/embeddable — pure, no server)
+        run: pytest -q
+
+  version-guard:
+    # The app version must come from config.py (app_version) → /api/health + OpenAPI title,
+    # never a hardcoded literal (pikaos-dev-rules §6.5 + architecture/versions.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: No hardcoded version literal in main.py
+        run: |
+          if grep -rEn 'FastAPI\([^)]*version\s*=\s*"[0-9]' PikaOS-*/Backend/app/main.py; then
+            echo "::error::hardcoded version in FastAPI(...) — use version=settings.app_version (§6.5)"; exit 1
+          fi
+          if grep -rEn '"version"\s*:\s*"[0-9]' PikaOS-*/Backend/app/main.py; then
+            echo "::error::hardcoded version literal in /api/health — use settings.app_version (§6.5)"; exit 1
+          fi
+          echo "version is config-driven in all standalone apps ✓"
