@@ -62,34 +62,11 @@ def _new_site_home(new_url: str) -> str | None:
     return urlunsplit((p.scheme, p.netloc, "/", "", ""))
 
 
-async def _verify_row(nofollow, follow, r: MappingRow, deep: bool, auth_map: dict[str, httpx.BasicAuth],
-                      ins_nofollow=None, ins_follow=None) -> RowVerdict:
-    old = r.oldUrl.strip()
-    new = r.newUrl.strip()
-    # HTTP Basic Auth per side, when its host is behind a login (UAT etc.) — None for an open host.
-    old_auth = auth_for(auth_map, old)
-    new_auth = auth_for(auth_map, new)
-    # bad-cert fallback client per side — ONLY for a host with no auth (never send creds over an
-    # unverified TLS connection). None disables the fallback for that side.
-    old_ins = ins_nofollow if old_auth is None else None
-    new_ins = ins_follow if new_auth is None else None
-
-    # deep = also pull the page HTML (one GET per side) so we can compare linked files + check the
-    # body; otherwise the cheap status-only probe. The verdict (status/note) logic below is identical
-    # either way — it only reads status codes + Location.
-    old_status, old_loc, old_html, old_ssl = (None, None, None, False)
-    if old:
-        if deep:
-            old_status, old_loc, old_html, old_ssl = await probe_no_follow_body(nofollow, old, old_auth, old_ins)
-        else:
-            old_status, old_loc, old_ssl = await probe_no_follow(nofollow, old, old_auth, old_ins)
-    new_status, new_final, new_html, new_ssl = (None, None, None, False)
-    if new:
-        if deep:
-            new_status, new_final, new_html, new_ssl = await probe_follow_body(follow, new, new_auth, new_ins)
-        else:
-            new_status, new_final, new_ssl = await probe_follow(follow, new, new_auth, new_ins)
-
+# For human: the verdict ladder — turn the two probe results into a checklist status + a stand-alone
+# Thai note + (when the new URL is dead) a fallback target. Pure: no network, no body/file logic.
+# Returns the status/note/target PLUS the derived flags the RowVerdict needs (so the caller doesn't
+# recompute them).
+def _derive_verdict(r: MappingRow, old: str, new: str, old_status, old_loc, new_status, new_auth) -> dict:
     old_reachable = old_status is not None
     new_ok = new_status is not None and 200 <= new_status < 300
     new_blocked = new_status in _BLOCKED_CODES
@@ -152,63 +129,112 @@ async def _verify_row(nofollow, follow, r: MappingRow, deep: bool, auth_map: dic
             note += f" — เสนอให้ redirect ไปหน้าแรกแทนก่อน: {home}"
         status, target = STATUS_PROBLEM, home
 
-    # --- deep check: compare files linked on each page + flag a thin (H1-only) body ---------
+    return dict(status=status, note=note, target=target,
+                old_reachable=old_reachable, new_ok=new_ok, already=already, old_target_abs=old_target_abs)
+
+
+# For human: the deep-check findings (only when deepCheck) — compare the downloadable files linked on
+# each page + read each side's body signal. Pure: callers pass the already-fetched HTML. Returns the
+# RowVerdict deep_fields dict (one ** keyword splat at the call site).
+def _deep_findings(old: str, new: str, new_final, old_html, new_html) -> dict:
+    # File comparison needs BOTH pages. With one side missing (e.g. newUrl left blank because no
+    # match was strong enough), there is nothing to compare — don't report the old page's files
+    # as "missing on new" (there's no new page yet).
+    if old and new:
+        old_files = page_inspect.extract_files(old_html, old)
+        new_files = page_inspect.extract_files(new_html, new_final or new)
+        old_names, new_names = set(old_files), set(new_files)
+        matched = sorted(old_names & new_names)
+        only_old = sorted(old_names - new_names)
+        only_new = sorted(new_names - old_names)
+        files_same = (old_names == new_names) if (old_names or new_names) else None
+        old_fc, new_fc = len(old_files), len(new_files)
+    else:
+        matched, only_old, only_new, files_same, old_fc, new_fc = [], [], [], None, 0, 0
+    old_body = page_inspect.body_signal(old_html)
+    new_body = page_inspect.body_signal(new_html)
+    return dict(
+        oldFileCount=old_fc, newFileCount=new_fc,
+        filesMatched=matched, filesOnlyOld=only_old, filesOnlyNew=only_new, filesSame=files_same,
+        oldHasH1=old_body.has_h1, newHasH1=new_body.has_h1,
+        oldBodyThin=old_body.thin, newBodyThin=new_body.thin,
+        oldHasBody=old_body.has_body, newHasBody=new_body.has_body,
+        oldError=old_body.error, newError=new_body.error,
+        oldSpa=old_body.spa, newSpa=new_body.spa,
+        bodyChecked=True,
+    )
+
+
+# For human: fold the deep findings back into the verdict — a 200-but-error body overrides an
+# otherwise-fine status, and empty/thin/SPA/file-mismatch findings append a caveat to the note. Reads
+# the deep_fields dict produced by _deep_findings. Returns the (possibly updated) status/note/target.
+def _apply_deep_caveats(status: str, note: str, target, old: str, new: str, new_status, df: dict):
+    # Content-aware override: a NEW page that returned 200 but whose body is an error/maintenance
+    # screen ("Internal Server Error", etc.) is NOT a good landing page — flag it as a problem so
+    # the status code can't hide it. (Only override an otherwise-"fine" verdict.)
+    if new and df["newError"] and status in (STATUS_PENDING, STATUS_DONE):
+        status = STATUS_PROBLEM
+        note = f"URL ใหม่ตอบ {new_status} แต่เนื้อหาเป็นหน้า error ({df['newError']}) — หน้าจริงใช้งานไม่ได้"
+        target = target or _new_site_home(new)
+
+    # Append content caveats so the note reads as one clear line: a migrated-but-empty new page
+    # or a mismatched downloadable-file set is worth flagging even when the status is otherwise OK.
+    caveats: list[str] = []
+    if new and df["newSpa"]:
+        # browser-only (WAF/bot-wall or JS-rendered): our server-side probe can't see the real
+        # body/files, so DON'T claim the page is empty or its files differ — confirm in a browser.
+        caveats.append("เว็บใหม่กันบอต (WAF) หรือเป็น JS-render — ระบบอ่านเนื้อหา/ไฟล์อัตโนมัติไม่ได้ เปิดลิงก์ยืนยันเอง")
+    elif new and df["newBodyThin"] and not df["newError"]:
+        caveats.append("หน้าใหม่มีแค่หัวข้อ (H1) แทบไม่มีเนื้อหา — อาจย้ายข้อมูลไม่ครบ")
+    # file mismatch only makes sense when BOTH pages exist AND neither is a SPA (a SPA's links
+    # are injected by JS, so a server-side file list is unreliable — skip the comparison).
+    if old and new and df["filesSame"] is False and not (df["oldSpa"] or df["newSpa"]):
+        bits = []
+        if df["filesOnlyOld"]:
+            bits.append(f"หายบนใหม่ {len(df['filesOnlyOld'])}")
+        if df["filesOnlyNew"]:
+            bits.append(f"เพิ่มบนใหม่ {len(df['filesOnlyNew'])}")
+        caveats.append("ไฟล์ดาวน์โหลดไม่ตรงกัน" + (f" ({', '.join(bits)})" if bits else ""))
+    if caveats:
+        note = f"{note} · " + " · ".join(caveats)
+    return status, note, target
+
+
+async def _verify_row(nofollow, follow, r: MappingRow, deep: bool, auth_map: dict[str, httpx.BasicAuth],
+                      ins_nofollow=None, ins_follow=None) -> RowVerdict:
+    old = r.oldUrl.strip()
+    new = r.newUrl.strip()
+    # HTTP Basic Auth per side, when its host is behind a login (UAT etc.) — None for an open host.
+    old_auth = auth_for(auth_map, old)
+    new_auth = auth_for(auth_map, new)
+    # bad-cert fallback client per side — ONLY for a host with no auth (never send creds over an
+    # unverified TLS connection). None disables the fallback for that side.
+    old_ins = ins_nofollow if old_auth is None else None
+    new_ins = ins_follow if new_auth is None else None
+
+    # deep = also pull the page HTML (one GET per side) so we can compare linked files + check the
+    # body; otherwise the cheap status-only probe. The verdict logic is identical either way — it
+    # only reads status codes + Location.
+    old_status, old_loc, old_html, old_ssl = (None, None, None, False)
+    if old:
+        if deep:
+            old_status, old_loc, old_html, old_ssl = await probe_no_follow_body(nofollow, old, old_auth, old_ins)
+        else:
+            old_status, old_loc, old_ssl = await probe_no_follow(nofollow, old, old_auth, old_ins)
+    new_status, new_final, new_html, new_ssl = (None, None, None, False)
+    if new:
+        if deep:
+            new_status, new_final, new_html, new_ssl = await probe_follow_body(follow, new, new_auth, new_ins)
+        else:
+            new_status, new_final, new_ssl = await probe_follow(follow, new, new_auth, new_ins)
+
+    v = _derive_verdict(r, old, new, old_status, old_loc, new_status, new_auth)
+    status, note, target = v["status"], v["note"], v["target"]
+
     deep_fields: dict = {}
     if deep:
-        # File comparison needs BOTH pages. With one side missing (e.g. newUrl left blank because no
-        # match was strong enough), there is nothing to compare — don't report the old page's files
-        # as "missing on new" (there's no new page yet).
-        if old and new:
-            old_files = page_inspect.extract_files(old_html, old)
-            new_files = page_inspect.extract_files(new_html, new_final or new)
-            old_names, new_names = set(old_files), set(new_files)
-            matched = sorted(old_names & new_names)
-            only_old = sorted(old_names - new_names)
-            only_new = sorted(new_names - old_names)
-            files_same = (old_names == new_names) if (old_names or new_names) else None
-            old_fc, new_fc = len(old_files), len(new_files)
-        else:
-            matched, only_old, only_new, files_same, old_fc, new_fc = [], [], [], None, 0, 0
-        old_body = page_inspect.body_signal(old_html)
-        new_body = page_inspect.body_signal(new_html)
-        deep_fields = dict(
-            oldFileCount=old_fc, newFileCount=new_fc,
-            filesMatched=matched, filesOnlyOld=only_old, filesOnlyNew=only_new, filesSame=files_same,
-            oldHasH1=old_body.has_h1, newHasH1=new_body.has_h1,
-            oldBodyThin=old_body.thin, newBodyThin=new_body.thin,
-            oldHasBody=old_body.has_body, newHasBody=new_body.has_body,
-            oldError=old_body.error, newError=new_body.error,
-            oldSpa=old_body.spa, newSpa=new_body.spa,
-            bodyChecked=True,
-        )
-        # Content-aware override: a NEW page that returned 200 but whose body is an error/maintenance
-        # screen ("Internal Server Error", etc.) is NOT a good landing page — flag it as a problem so
-        # the status code can't hide it. (Only override an otherwise-"fine" verdict.)
-        if new and new_body.error and status in (STATUS_PENDING, STATUS_DONE):
-            status = STATUS_PROBLEM
-            note = f"URL ใหม่ตอบ {new_status} แต่เนื้อหาเป็นหน้า error ({new_body.error}) — หน้าจริงใช้งานไม่ได้"
-            target = target or _new_site_home(new)
-
-        # Append content caveats so the note reads as one clear line: a migrated-but-empty new page
-        # or a mismatched downloadable-file set is worth flagging even when the status is otherwise OK.
-        caveats: list[str] = []
-        if new and new_body.spa:
-            # browser-only (WAF/bot-wall or JS-rendered): our server-side probe can't see the real
-            # body/files, so DON'T claim the page is empty or its files differ — confirm in a browser.
-            caveats.append("เว็บใหม่กันบอต (WAF) หรือเป็น JS-render — ระบบอ่านเนื้อหา/ไฟล์อัตโนมัติไม่ได้ เปิดลิงก์ยืนยันเอง")
-        elif new and new_body.thin and not new_body.error:
-            caveats.append("หน้าใหม่มีแค่หัวข้อ (H1) แทบไม่มีเนื้อหา — อาจย้ายข้อมูลไม่ครบ")
-        # file mismatch only makes sense when BOTH pages exist AND neither is a SPA (a SPA's links
-        # are injected by JS, so a server-side file list is unreliable — skip the comparison).
-        if old and new and files_same is False and not (old_body.spa or new_body.spa):
-            bits = []
-            if only_old:
-                bits.append(f"หายบนใหม่ {len(only_old)}")
-            if only_new:
-                bits.append(f"เพิ่มบนใหม่ {len(only_new)}")
-            caveats.append("ไฟล์ดาวน์โหลดไม่ตรงกัน" + (f" ({', '.join(bits)})" if bits else ""))
-        if caveats:
-            note = f"{note} · " + " · ".join(caveats)
+        deep_fields = _deep_findings(old, new, new_final, old_html, new_html)
+        status, note, target = _apply_deep_caveats(status, note, target, old, new, new_status, deep_fields)
 
     # Collision: this new URL is the fuzzy best-match for more than one old URL (Discover flagged it)
     # — likely a forced match, so warn even when the page itself is fine.
@@ -223,9 +249,9 @@ async def _verify_row(nofollow, follow, r: MappingRow, deep: bool, auth_map: dic
 
     return RowVerdict(
         symbol=r.symbol, oldUrl=old, newUrl=new,
-        oldStatus=old_status, oldRedirectsTo=old_target_abs, oldReachable=old_reachable,
-        newStatus=new_status, newFinalUrl=new_final, newOk=new_ok,
-        alreadyRedirected=already, suggestedStatus=status, suggestedNote=note, suggestedTarget=target,
+        oldStatus=old_status, oldRedirectsTo=v["old_target_abs"], oldReachable=v["old_reachable"],
+        newStatus=new_status, newFinalUrl=new_final, newOk=v["new_ok"],
+        alreadyRedirected=v["already"], suggestedStatus=status, suggestedNote=note, suggestedTarget=target,
         **deep_fields,
     )
 

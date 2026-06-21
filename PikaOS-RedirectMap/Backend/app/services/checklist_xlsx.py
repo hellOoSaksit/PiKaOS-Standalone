@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+from urllib.parse import urlsplit
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -346,7 +347,6 @@ def _sheet_todo(ws, rows: list[ExportRow]) -> None:
 
 def _origin_of(url: str) -> str:
     """Scheme://host of a URL (the 'main' URL for a symbol), empty string if not a URL."""
-    from urllib.parse import urlsplit
     p = urlsplit((url or "").strip())
     return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else (url or "")
 

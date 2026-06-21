@@ -15,15 +15,15 @@ from urllib.parse import urlsplit, urlunsplit
 
 from ..config import settings
 from ..schemas import DiscoverIn, DiscoverOut, MappingRow, MatchCandidate
-
-# how many close new URLs to surface per row (best first) for the user to sanity-check the pick
-_MAX_CANDIDATES = 5
 from .credentials import auth_for, build_auth_map
 from .net_guard import BlockedURLError, assert_public_url
 from .probe import make_client
 from .sitemap import SitemapError, fetch_sitemap_urls
 
 __all__ = ["discover", "SitemapError"]
+
+# how many close new URLs to surface per row (best first) for the user to sanity-check the pick
+_MAX_CANDIDATES = 5
 
 
 def _origin(url: str) -> tuple[str, str]:

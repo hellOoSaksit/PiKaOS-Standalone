@@ -10,6 +10,7 @@ internal target surfaces here as a failed request (→ status None) rather than 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -84,35 +85,46 @@ async def _head_then_get(client: httpx.AsyncClient, url: str, auth: httpx.Auth |
     return resp
 
 
-async def _request(
-    client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
-    insecure: httpx.AsyncClient | None = None,
+# For human: one retry loop, shared by the status probe and the body probe — the only difference
+# between them is the per-attempt fetch (HEAD-then-GET vs a plain GET), which is passed in as `attempt`.
+async def _with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    insecure: httpx.AsyncClient | None,
+    attempt: Callable[[httpx.AsyncClient], Awaitable[httpx.Response]],
 ) -> tuple[httpx.Response | None, bool]:
-    """Fetch `url` → (Response or None after retries, ssl_insecure). HEAD first, GET fallback.
-    Retried on a transient failure AND on a WAF/rate-limit status (403/405/429/503). On a TLS
-    cert-verification failure, retries with the no-verify `insecure` client (when provided — i.e.
-    the host has no Basic Auth to leak) and reports ssl_insecure=True. `auth` is applied to every
-    request; None = no auth (the common case)."""
-    attempts = max(settings.redirect_probe_retries, settings.redirect_blocked_retries) + 1
+    """Run `attempt(client)` → (Response or None, ssl_insecure). Retried on a transient failure
+    AND on a WAF/rate-limit status (403/405/429/503). On a TLS cert-verification failure, retries
+    with the no-verify `insecure` client (when provided — i.e. the host has no Basic Auth to leak)
+    and reports ssl_insecure=True. `attempt` already carries the URL + auth."""
+    rounds = max(settings.redirect_probe_retries, settings.redirect_blocked_retries) + 1
     resp: httpx.Response | None = None
     ssl_insecure = False
-    for attempt in range(attempts):
+    for n in range(rounds):
         use = insecure if ssl_insecure else client
         try:
-            resp = await _head_then_get(use, url, auth)
+            resp = await attempt(use)
         except httpx.HTTPError as exc:
             if insecure is not None and not ssl_insecure and _is_ssl_error(exc):
                 ssl_insecure = True
                 try:
-                    resp = await _head_then_get(insecure, url, auth)
+                    resp = await attempt(insecure)
                 except httpx.HTTPError:
                     resp = None
             else:
                 resp = None
-        if not _should_retry(resp, attempt):
+        if not _should_retry(resp, n):
             return resp, ssl_insecure
-        await asyncio.sleep(_retry_delay(resp, attempt))
+        await asyncio.sleep(_retry_delay(resp, n))
     return resp, ssl_insecure
+
+
+async def _request(
+    client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
+    insecure: httpx.AsyncClient | None = None,
+) -> tuple[httpx.Response | None, bool]:
+    """Status probe: HEAD first, GET fallback (see _head_then_get). Returns (Response|None, ssl_insecure)."""
+    return await _with_retries(client, url, insecure, lambda c: _head_then_get(c, url, auth))
 
 
 async def probe_no_follow(client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
@@ -145,26 +157,8 @@ async def _request_get(
     client: httpx.AsyncClient, url: str, auth: httpx.Auth | None = None,
     insecure: httpx.AsyncClient | None = None,
 ) -> tuple[httpx.Response | None, bool]:
-    attempts = max(settings.redirect_probe_retries, settings.redirect_blocked_retries) + 1
-    resp: httpx.Response | None = None
-    ssl_insecure = False
-    for attempt in range(attempts):
-        use = insecure if ssl_insecure else client
-        try:
-            resp = await use.get(url, auth=auth)
-        except httpx.HTTPError as exc:
-            if insecure is not None and not ssl_insecure and _is_ssl_error(exc):
-                ssl_insecure = True
-                try:
-                    resp = await insecure.get(url, auth=auth)
-                except httpx.HTTPError:
-                    resp = None
-            else:
-                resp = None
-        if not _should_retry(resp, attempt):
-            return resp, ssl_insecure
-        await asyncio.sleep(_retry_delay(resp, attempt))
-    return resp, ssl_insecure
+    """Body probe: a plain GET (HEAD has no body), same retry + SSL-fallback as _request."""
+    return await _with_retries(client, url, insecure, lambda c: c.get(url, auth=auth))
 
 
 def _html_of(resp: httpx.Response) -> str | None:

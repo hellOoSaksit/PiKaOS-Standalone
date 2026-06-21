@@ -1,6 +1,8 @@
-/* Redirect-map rows — the working set of mappings (old URL → new URL per Symbol).
-   Persisted in THIS browser only (localStorage). NO seed / mock data: the table starts empty;
-   the real set comes from Discover (read the old site's sitemap), CSV import, or typing rows. */
+/* For human — Redirect-map rows: the working set of mappings (old URL → new URL per Symbol).
+   Rows live in memory in the screen (a refresh starts empty); saveRows/loadRows below are the
+   MANUAL "Save/Load snapshot" the user triggers from the toolbar — the ONLY thing written to
+   localStorage. NO seed / mock data: the real set comes from Discover (read the old site's
+   sitemap), CSV import, or typing rows. */
 
 const KEY = "pikaos.redirectmap.rows.v2";   // v2: drop the old seeded sample row from earlier builds
 
@@ -12,6 +14,9 @@ export function newRow(extra = {}) {
   return { id: `r_${Date.now().toString(36)}_${rnd}`, symbol: "", oldUrl: "", newUrl: "", status: "", note: "", ...extra };
 }
 
+// --- manual snapshot (the only persistence) ---------------------------------
+// For human — Save writes the current rows to localStorage; Load reads them back. Nothing here runs
+// automatically; a refresh (F5) starts from an empty table, so the user decides what is kept.
 export function loadRows() {
   try {
     const raw = localStorage.getItem(KEY);
@@ -28,38 +33,20 @@ export function saveRows(rows) {
 }
 
 // --- HTTP Basic Auth credentials (per host) ---------------------------------
-// Some sites — usually a UAT/staging env — sit behind a browser "Sign in" dialog (HTTP Basic
-// Auth); a probe just gets 401. The user adds host + username + password here so verify/discover
-// can authenticate. Kept in THIS browser only (localStorage), like the rows — the tool is stateless
-// and these are sent on the request, never stored server-side. Plaintext in localStorage: fine for
-// an internal tool, but don't reuse a sensitive personal password.
-
-const CRED_KEY = "pikaos.redirectmap.creds.v1";
-
+// For human — some sites (usually a UAT/staging env) sit behind a browser "Sign in" dialog (HTTP
+// Basic Auth); a bare probe just gets a 401. The user adds host + username + password and verify/
+// discover then authenticate. Credentials are kept IN MEMORY ONLY (in the screen's React state) and
+// ride on the request — never written to localStorage, never stored server-side; a refresh clears
+// them. newCred() just makes one blank entry.
 export function newCred(extra = {}) {
   const rnd = Math.random().toString(36).slice(2, 8);
   return { id: `c_${Date.now().toString(36)}_${rnd}`, host: "", username: "", password: "", ...extra };
 }
 
-export function loadCreds() {
-  try {
-    const raw = localStorage.getItem(CRED_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return arr.map((c) => ({ ...newCred(), ...c }));
-    }
-  } catch (e) {}
-  return [];
-}
-
-export function saveCreds(creds) {
-  try { localStorage.setItem(CRED_KEY, JSON.stringify(creds)); } catch (e) {}
-}
-
-// --- CSV import / export ----------------------------------------------------
-// The central checklist is a spreadsheet; CSV is the lingua franca. Import detects columns by
-// header keyword (Thai + English) so the extra columns in the template don't break it. Export
-// writes the columns the checklist expects back.
+// --- CSV import -------------------------------------------------------------
+// For human — the central checklist is a spreadsheet; CSV is the lingua franca for getting rows IN.
+// (The export goes OUT as .xlsx via the backend, not from here.) Import detects columns by header
+// keyword (Thai + English) so the template's extra columns don't break it.
 
 function parseCsvGrid(text) {
   // minimal RFC4180 parser: handles quoted fields, embedded commas/quotes/newlines
@@ -103,18 +90,4 @@ export function parseCsv(text) {
     out.push(newRow({ symbol, oldUrl, newUrl, status: at(iSt), note: at(iNote) }));
   }
   return out;
-}
-
-function csvCell(v) {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-export function toCsv(rows) {
-  const head = ["No.", "Symbol", "URL เว็บไซต์เดิม", "URL เว็บไซต์ใหม่", "สถานะ", "Note"];
-  const lines = [head.map(csvCell).join(",")];
-  rows.forEach((r, i) => {
-    lines.push([i + 1, r.symbol, r.oldUrl, r.newUrl, r.status, r.note].map(csvCell).join(","));
-  });
-  return "﻿" + lines.join("\r\n");   // BOM so Excel reads Thai (UTF-8) correctly
 }
