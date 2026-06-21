@@ -4,7 +4,8 @@
    them: Verify probes both sides and sets each row's status+note, which surface in the summary
    tiles and the Excel export. "web.config" turns the rows into an IIS URL-Rewrite file; Discover
    pulls the old site's sitemap; CSV import + .xlsx export round-trip the central checklist. No nav,
-   no login, no other modules. Rows live in this browser (localStorage). */
+   no login, no other modules. Rows are in-memory (cleared on F5) with a manual Save/Load snapshot;
+   probe credentials are in-memory only — never persisted. */
 import React from 'react';
 const { useState, useEffect, useRef, useMemo } = React;
 import { PageHead, Panel, Btn, Empty, StatTile } from '../components/components.jsx';
